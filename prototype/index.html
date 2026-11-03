@@ -1,0 +1,1262 @@
+<title>Army Passion Prototype</title>
+<style>
+/* Layout: the real app's chat screen — sidebar, conversation, prompt bar — over a thin prototype banner.
+   Tokens copied from frontend/src/app/globals.css so the prototype looks like the app. */
+:root {
+  --bg: #ffffff;
+  --surface: #f6f6f4;
+  --surface-2: #ededea;
+  --border: #e2e2dd;
+  --text: #1b1b18;
+  --muted: #6b6b63;
+  --accent: #2f6f4e;
+  --accent-soft: #e6f1eb;
+  --accent-fg: #ffffff;
+  --danger: #b3261e;
+  --warning: #8a5a00;
+  --banner: #1b1b18;
+  --banner-fg: #f6f6f4;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141413; --surface: #1d1d1b; --surface-2: #272724; --border: #33332f;
+    --text: #ececea; --muted: #9b9b92; --accent: #6cbd92; --accent-soft: #1e332a;
+    --accent-fg: #0f1a14; --danger: #f2b8b5; --warning: #e8c37a;
+    --banner: #ececea; --banner-fg: #141413; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141413; --surface: #1d1d1b; --surface-2: #272724; --border: #33332f;
+  --text: #ececea; --muted: #9b9b92; --accent: #6cbd92; --accent-soft: #1e332a;
+  --accent-fg: #0f1a14; --danger: #f2b8b5; --warning: #e8c37a;
+  --banner: #ececea; --banner-fg: #141413; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+input, select, textarea { font: inherit; color: var(--text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+a { color: var(--accent); }
+
+.banner { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 50; background: var(--banner); color: var(--banner-fg); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 8px 16px; font-size: 13px; }
+.banner strong { letter-spacing: .04em; text-transform: uppercase; font-size: 12px; }
+.banner button { border: 1px solid currentColor; border-radius: 999px; padding: 2px 12px; font-size: 13px; opacity: .9; }
+
+.shell { display: grid; grid-template-columns: 288px minmax(0, 1fr); min-height: calc(100% - 40px); }
+.sidebar { background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; position: sticky; top: 38px; height: calc(100vh - 38px); }
+.side-head { display: flex; align-items: center; justify-content: space-between; padding: 20px; }
+.side-head span { font-size: 18px; font-weight: 600; letter-spacing: -.01em; }
+.new-btn { margin: 0 16px; display: flex; gap: 10px; align-items: center; border: 1px solid var(--border); background: var(--bg); border-radius: 999px; padding: 12px 16px; font-weight: 500; }
+.new-btn:hover { background: var(--surface-2); }
+.recent { flex: 1; overflow-y: auto; padding: 28px 16px 0; }
+.recent h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 0 12px 8px; margin: 0; }
+.recent button { display: block; width: 100%; text-align: left; padding: 9px 12px; border-radius: 8px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent button:hover { background: var(--surface-2); color: var(--text); }
+.side-foot { border-top: 1px solid var(--border); padding: 16px 20px; display: flex; gap: 12px; align-items: center; }
+.avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; font-weight: 600; font-size: 13px; flex-shrink: 0; }
+.side-foot p { margin: 0; font-size: 13px; }
+.side-foot p + p { color: var(--muted); font-size: 12px; }
+.menu-btn { display: none; }
+
+.main { display: flex; flex-direction: column; min-width: 0; }
+.convo { flex: 1; width: 100%; max-width: 780px; margin: 0 auto; padding: 32px 16px 24px; display: flex; flex-direction: column; gap: 24px; }
+.empty h1 { font-size: clamp(28px, 4vw, 36px); font-weight: 600; letter-spacing: -.02em; margin: 40px 0 8px; text-wrap: balance; }
+.empty > p { color: var(--muted); font-size: 18px; margin: 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 28px; }
+.card-btn { text-align: left; border: 1px solid var(--border); background: var(--surface); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 6px; }
+.card-btn:hover { border-color: var(--accent); }
+.card-btn b { font-size: 15px; }
+.card-btn span { color: var(--muted); font-size: 14px; }
+.card-btn em { font-style: normal; font-size: 12px; color: var(--accent); margin-top: 4px; }
+
+.bubble { align-self: flex-end; max-width: 85%; background: var(--surface-2); border-radius: 22px; padding: 10px 18px; white-space: pre-wrap; }
+.file-chip { align-self: flex-end; display: flex; gap: 12px; align-items: center; border: 1px solid var(--border); background: var(--surface); border-radius: 16px; padding: 10px 16px; max-width: 85%; }
+.file-chip svg { color: var(--accent); flex-shrink: 0; }
+.file-chip b { display: block; font-weight: 500; overflow-wrap: anywhere; }
+.file-chip small { color: var(--muted); font-size: 12px; }
+
+.panel { border: 1px solid var(--border); background: var(--surface); border-radius: 16px; padding: 20px; }
+.panel h2 { font-size: 17px; font-weight: 600; margin: 0; }
+.panel .lede { color: var(--muted); margin: 4px 0 0; }
+.panel .lede b { color: var(--text); font-weight: 500; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.tiny { font-size: 12px; }
+.warn { color: var(--warning); }
+.danger { color: var(--danger); }
+.ok { color: var(--accent); }
+.note { background: var(--accent-soft); border-radius: 8px; padding: 8px 12px; margin-top: 12px; }
+
+.group-head { width: 100%; display: flex; justify-content: space-between; align-items: center; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; margin-top: 16px; text-align: left; font-weight: 500; }
+.group-head .tiny { font-weight: 400; color: var(--muted); }
+.list { list-style: none; margin: 4px 0 0; padding: 0; }
+.list > li { border-top: 1px solid var(--border); padding: 10px 0; }
+.row-line { display: flex; align-items: flex-start; gap: 12px; }
+.row-line .rownum { width: 52px; flex-shrink: 0; font-size: 12px; color: var(--muted); padding-top: 2px; }
+.row-line .who { flex: 1; min-width: 0; }
+.row-line .who b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-line .who small { display: block; color: var(--muted); font-size: 12px; }
+.row-line .tags { display: flex; gap: 8px; align-items: center; flex-shrink: 0; font-size: 12px; padding-top: 2px; flex-wrap: wrap; justify-content: flex-end; }
+.link { color: var(--accent); text-decoration: underline; font-size: inherit; }
+.link.muted-link { color: var(--muted); }
+.strike { text-decoration: line-through; color: var(--muted); }
+.detail { padding: 8px 0 0 64px; display: flex; flex-direction: column; gap: 6px; }
+.changes { width: 100%; border-collapse: collapse; font-size: 14px; }
+.changes td { padding: 3px 12px 3px 0; vertical-align: top; }
+.changes td:first-child { color: var(--muted); }
+.changes td:last-child { font-weight: 500; }
+.table-wrap { overflow-x: auto; }
+
+.mapping-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 16px; border-top: 1px solid var(--border); padding: 12px 0; }
+.mapping-row p { margin: 0; }
+.mapping-row small { color: var(--muted); font-size: 12px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.field { width: 100%; border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 8px 12px; }
+.field:focus { border-color: var(--accent); outline: none; }
+
+.recog { list-style: none; margin: 4px 0 0; padding: 0; }
+.recog li { display: flex; gap: 8px; border-top: 1px solid var(--border); padding: 6px 4px; font-size: 14px; }
+.recog li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recog li span:last-child { font-weight: 500; }
+.newbox { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-top: 16px; }
+.newbox p { margin: 0; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; border-top: 1px solid var(--border); margin-top: 20px; padding-top: 16px; }
+.btn { background: var(--accent); color: var(--accent-fg); border-radius: 999px; padding: 10px 20px; font-weight: 500; }
+.btn:disabled { background: var(--surface-2); color: var(--muted); cursor: not-allowed; }
+.btn.sm { padding: 6px 16px; font-size: 14px; }
+.btn-ghost { border: 1px solid var(--border); border-radius: 999px; padding: 6px 16px; font-size: 14px; }
+.btn-ghost:hover { background: var(--surface-2); }
+
+.editor { margin-top: 8px; border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 12px; }
+.editor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px 12px; }
+.editor label { display: block; }
+.editor label > span { display: block; font-size: 12px; color: var(--muted); }
+.editor label > span i { font-style: normal; color: var(--accent); margin-left: 4px; }
+.editor .field { padding: 6px 10px; font-size: 14px; margin-top: 2px; }
+
+.cols { margin-top: 16px; border: 1px solid var(--border); border-radius: 8px; }
+.cols-head { width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; text-align: left; font-weight: 500; }
+.cols-body { border-top: 1px solid var(--border); padding: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.chip { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--bg); border-radius: 999px; padding: 4px 6px 4px 12px; font-size: 14px; }
+.chip.added { border-color: var(--accent); background: var(--accent-soft); }
+.chip .pill { border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; font-size: 12px; color: var(--muted); }
+.chip .pill:hover { border-color: var(--text); color: var(--text); }
+.chip .pill.del { border-color: var(--danger); color: var(--danger); }
+.chip .pill.del:hover { background: var(--danger); color: var(--bg); }
+.chip.plain { padding-right: 12px; }
+.add-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin-top: 12px; align-items: center; }
+.chip.off { color: var(--muted); background: transparent; border-style: dashed; padding-right: 12px; }
+.chip.new { border-color: var(--accent); background: var(--accent-soft); padding-right: 12px; }
+.chip.new b { font-size: 11px; color: var(--accent); text-transform: uppercase; letter-spacing: .04em; }
+.modal-back { position: fixed; inset: 0; background: rgb(0 0 0 / .45); z-index: 100; display: grid; place-items: center; padding: 16px; }
+.modal { background: var(--bg); border-radius: 16px; padding: 24px; width: min(400px, 100%); box-shadow: 0 16px 48px rgb(0 0 0 / .25); }
+.modal h3 { margin: 0; font-size: 18px; font-weight: 600; }
+.modal p { margin: 6px 0 0; color: var(--muted); font-size: 14px; }
+.modal .modal-btns { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+.modal .modal-btns button { width: 100%; padding: 12px; font-size: 15px; }
+.modal { max-height: 90vh; overflow-y: auto; }
+.modal.wide { width: min(880px, 100%); }
+.fmodal { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+.fmodal-head { padding: 18px 24px 14px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
+.fmodal-head > div { flex: 1; min-width: 0; }
+.fmodal-head .x { color: var(--muted); padding: 4px; border-radius: 8px; }
+.fmodal-head .x:hover { background: var(--surface-2); color: var(--text); }
+.pill-warn { display: inline-block; margin-top: 8px; border: 1px solid var(--warning); color: var(--warning); border-radius: 999px; padding: 1px 10px; font-size: 12px; }
+.pill-ok { display: inline-block; margin-top: 8px; background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 1px 10px; font-size: 12px; }
+.fmodal-body { overflow-y: auto; padding: 16px 24px 24px; display: flex; flex-direction: column; gap: 14px; background: var(--surface); }
+.fsec { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px 16px; }
+.fsec-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.fsec-head b { font-size: 15px; font-weight: 600; }
+.fgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 14px; }
+.fgrid .span2 { grid-column: span 2; }
+.modal .fgrid label { margin: 0; font-size: 12px; }
+.modal .fgrid .field { margin-top: 4px; padding: 8px 10px; font-size: 15px; }
+.fgrid .field.missing { border: 1px dashed var(--warning); }
+.fgrid .field.missing::placeholder { color: var(--warning); opacity: .8; }
+.fmodal-foot { border-top: 1px solid var(--border); padding: 14px 24px; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; }
+.amt { display: flex; gap: 20px; flex-wrap: wrap; }
+.amt span { display: block; font-size: 12px; color: var(--muted); }
+.amt b { font-size: 16px; }
+.amt .big b { color: var(--accent); font-size: 18px; }
+@media (max-width: 767px) { .fgrid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .fmodal-head, .fmodal-body, .fmodal-foot { padding-left: 16px; padding-right: 16px; } }
+@media (max-width: 480px) { .fgrid { grid-template-columns: minmax(0, 1fr); } .fgrid .span2 { grid-column: auto; } }
+.modal .editor-grid label { margin-top: 0; }
+.modal-foot { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 20px; }
+.modal label { display: block; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.modal label .field { margin-top: 2px; color: var(--text); font-size: 15px; }
+
+.cea-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.cea-row .who { flex: 1 1 220px; min-width: 0; }
+.cea-row .who b { display: block; font-weight: 500; }
+.cea-row .who small { display: block; color: var(--muted); font-size: 12px; }
+.cea-row .who small.warn { color: var(--warning); }
+.cea-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.icon-sq { border: 1px solid var(--border); border-radius: 8px; padding: 6px; display: grid; place-items: center; color: var(--muted); }
+.icon-sq:hover { color: var(--text); background: var(--surface-2); }
+.icon-sq.del:hover { color: var(--danger); border-color: var(--danger); }
+.btn-ghost { display: inline-flex; align-items: center; gap: 6px; }
+.form-sec { font-size: 12px; margin: 20px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+.field.missing { border-color: var(--warning); }
+.claim { display: flex; flex-wrap: wrap; gap: 8px 24px; background: var(--accent-soft); border-radius: 8px; padding: 12px; margin-top: 20px; }
+.claim b { display: block; font-size: 17px; }
+.claim span { font-size: 12px; color: var(--muted); }
+.confirm { margin-top: 8px; border: 1px solid var(--danger); border-radius: 8px; padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+
+.picker-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 300px; overflow-y: auto; }
+.picker-list button { width: 100%; text-align: left; border-top: 1px solid var(--border); padding: 10px 4px; }
+.picker-list button:hover { background: var(--surface-2); }
+.picker-list b { display: block; font-weight: 500; }
+.picker-list small { color: var(--muted); font-size: 12px; }
+.radios { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.radios label { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.docs { list-style: none; margin: 4px 0 0; padding: 0; }
+.docs li { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid var(--border); padding: 6px 0; font-size: 14px; }
+.badge { border-radius: 4px; background: var(--surface-2); padding: 1px 6px; font-size: 12px; color: var(--muted); }
+
+.composer { position: sticky; bottom: 0; background: var(--bg); padding: 8px 16px calc(16px + env(safe-area-inset-bottom, 0px)); }
+.composer-inner { max-width: 748px; margin: 0 auto; position: relative; }
+.prompt { display: flex; align-items: flex-end; gap: 8px; border: 1px solid var(--border); background: var(--surface); border-radius: 24px; padding: 8px 10px; }
+.prompt:focus-within { border-color: var(--accent); }
+.icon-btn { border-radius: 999px; padding: 9px; color: var(--muted); display: grid; place-items: center; }
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.send { background: var(--accent); color: var(--accent-fg); border-radius: 999px; padding: 9px; display: grid; place-items: center; }
+.send:disabled { background: var(--surface-2); color: var(--muted); }
+#prompt-input { flex: 1; min-width: 0; resize: none; border: 0; background: transparent; padding: 9px 0; font-size: 16px; outline: none; max-height: 160px; }
+.attach-menu { position: absolute; bottom: calc(100% + 8px); left: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 6px; width: min(340px, 100%); box-shadow: 0 8px 24px rgb(0 0 0 / .12); z-index: 10; }
+.attach-menu p { margin: 4px 8px 6px; font-size: 12px; color: var(--muted); }
+.attach-menu button { display: block; width: 100%; text-align: left; padding: 8px; border-radius: 8px; }
+.attach-menu button:hover { background: var(--surface-2); }
+.attach-menu small { display: block; color: var(--muted); font-size: 12px; }
+.footnote { text-align: center; color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+
+@media (max-width: 767px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: 280px; height: 100%; z-index: 60; transform: translateX(-100%); transition: transform .2s; }
+  .sidebar.open { transform: none; }
+  .scrim { position: fixed; inset: 0; background: rgb(0 0 0 / .4); z-index: 55; }
+  .menu-btn { display: inline-grid; place-items: center; padding: 8px; border-radius: 8px; color: var(--muted); }
+  .mobile-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px 0; }
+  .mapping-row { grid-template-columns: minmax(0, 1fr); }
+  .detail { padding-left: 0; }
+  .add-row { grid-template-columns: minmax(0, 1fr); }
+}
+@media (min-width: 768px) { .mobile-head { display: none; } }
+@media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+</style>
+
+<div class="banner" role="note">
+  <span><strong>Prototype</strong> &nbsp;Made-up data. Nothing is saved.</span>
+  <button type="button" data-act="reset">Start over</button>
+</div>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="side-head"><span>Army Passion</span></div>
+    <button type="button" class="new-btn" data-act="reset">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      New
+    </button>
+    <nav class="recent" aria-label="Recent">
+      <h2>Recent</h2>
+      <button type="button" title="Placeholder — history isn't built yet">Imported widows_sheet_oct.xlsx</button>
+      <button type="button" title="Placeholder — history isn't built yet">Voice note — Kamlesh Devi, Rohtak</button>
+      <button type="button" title="Placeholder — history isn't built yet">Voice note — new family, 9 Jat</button>
+      <button type="button" title="Placeholder — history isn't built yet">Imported pension_update_sep.xlsx</button>
+    </nav>
+    <div class="side-foot">
+      <div class="avatar" aria-hidden="true">VR</div>
+      <div><p>Col. Vikram Rathore</p><p>Colonel (Retd)</p></div>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" hidden data-act="close-menu"></div>
+
+  <main class="main">
+    <div class="mobile-head">
+      <button type="button" class="menu-btn" data-act="open-menu" aria-label="Open menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <span class="muted">Army Passion</span>
+    </div>
+
+    <div class="convo" id="convo" aria-live="polite"></div>
+
+    <div class="composer">
+      <div class="composer-inner">
+        <div class="attach-menu" id="attach-menu" hidden>
+          <p>Sample files (made up)</p>
+          <button type="button" data-act="drop-excel" data-variant="standard"><b>widows_sheet_sample.xlsx</b><small>42 columns · 63 rows</small></button>
+          <button type="button" data-act="drop-excel" data-variant="extra"><b>widows_sheet_with_extra_columns.xlsx</b><small>3 new columns · 30 rows</small></button>          <button type="button" data-act="cea-upload"><b>CEA 2026.pdf</b><small>A form to fill</small></button>
+        </div>
+        <div class="prompt">
+          <button type="button" class="icon-btn" data-act="toggle-attach" aria-label="Attach an Excel sheet, voice note or document" title="Attach a file">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21.44 11.05l-8.49 8.49a5.5 5.5 0 01-7.78-7.78l8.49-8.49a3.67 3.67 0 115.18 5.18l-8.49 8.49a1.83 1.83 0 11-2.59-2.59l7.78-7.78" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <textarea id="prompt-input" rows="1" placeholder="Ask something, or attach an Excel sheet, voice note or document"></textarea>
+          <button type="button" class="send" id="send-btn" data-act="send" aria-label="Send" disabled>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+        <p class="footnote">Mock data only. Always check important details before acting on them.</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- made-up data, generated the same way every time ----------
+  function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  let rand = rng(4242);
+  const pick = (a) => a[Math.floor(rand() * a.length)];
+  const digits = (n) => String(6 + Math.floor(rand() * 4)) + Array.from({ length: n - 1 }, () => Math.floor(rand() * 10)).join("");
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+  const WOMEN = ["Sunita", "Kamlesh", "Santosh", "Bimla", "Rekha", "Savitri", "Meena", "Pushpa", "Harjit", "Paramjit", "Baljit", "Lakshmi", "Selvi", "Sheela", "Bindu", "Mita", "Sunanda", "Mangal", "Anita", "Suman", "Rajbala", "Omwati"];
+  const MEN = ["Rajbir", "Satpal", "Balwant", "Krishan", "Surender", "Gurpreet", "Jagtar", "Murugan", "Rajan", "Subrata", "Dattatray", "Dinesh", "Mahesh", "Ravinder", "Devender", "Naresh"];
+  const SURNAMES = ["Rathee", "Dahiya", "Malik", "Yadav", "Sharma", "Tomar", "Sangwan", "Negi", "Rawat", "Patil", "Jadhav", "Pillai", "Nair", "Ghosh", "Beniwal", "Chauhan"];
+  const BOYS = ["Rahul", "Aman", "Karan", "Rohit", "Vivek", "Akash", "Sahil", "Yash"];
+  const GIRLS = ["Priya", "Neha", "Pooja", "Simran", "Jyoti", "Komal", "Ritu", "Sneha"];
+  const PLACES = [["Rohtak", "Haryana", "28.8955, 76.6066"], ["Hisar", "Haryana", "29.1492, 75.7217"], ["Jind", "Haryana", "29.3159, 76.3146"], ["Ludhiana", "Punjab", "30.9010, 75.8573"], ["Moga", "Punjab", "30.8158, 75.1711"], ["Meerut", "Uttar Pradesh", "28.9845, 77.7064"], ["Jhansi", "Uttar Pradesh", "25.4484, 78.5685"], ["Pauri Garhwal", "Uttarakhand", "30.1469, 78.7800"], ["Kangra", "Himachal Pradesh", "32.0998, 76.2691"], ["Satara", "Maharashtra", "17.6868, 74.0183"], ["Palakkad", "Kerala", "10.7867, 76.6548"], ["Madurai", "Tamil Nadu", "9.9252, 78.1198"]];
+  const REGIMENTS = ["The Rajput Regiment", "The Jat Regiment", "The Punjab Regiment", "The Sikh Regiment", "The Garhwal Rifles", "The Dogra Regiment", "The Maratha Light Infantry", "The Madras Regiment"];
+  const RANKS = ["SEP", "SEP", "L NK", "NK", "HAV", "HAV", "NB SUB", "SUB"];
+  const TEHSILS = ["SADAR", "KHARKHODA", "MEHAM", "BARWALA", "NANGAL", "GOHANA"];
+  const TOWNS = ["RAMPURA", "SOHNA", "KALANAUR", "LADWA", "SAFIDON", "HANSI"];
+  const VILLAGES = ["KARONTHA", "SYONDI", "KANSALA", "NAMOL", "RISALI", "KHERA"];
+  const BANKS = ["State Bank of India", "Punjab National Bank", "Canara Bank", "Bank of Baroda"];
+
+  // The colonel's LIST OF FIELDS, in his order, and where each heading goes.
+  const HEADINGS = [
+    ["S NO", null], ["DATE OF CAUALTY", "date_of_death"], ["SERVING UNIT", "unit"], ["SAINIK ARMY NO", "service_number"],
+    ["RANK", "rank"], ["NAME", "soldier_name"], ["NAME OF NOK", "widow_name"], ["RELATIONSHIP", "nok_relationship"],
+    ["DISTRICT", "district"], ["TEHSIL", "tehsil"], ["TOWN", "town"], ["VILLAGE", "village"], ["POST OFFICE", "post_office"],
+    ["STATE", "state"], ["PIN CODE", "pincode"], ["TELE NO", "phone"], ["PARENT UNIT", "regiment"], ["GEOLOCATION", "geolocation"],
+    ["Name_of_Child1", "child1_name"], ["Sex_Child1", "child1_sex"], ["DOB_Child1", "child1_dob"], ["Marital_Status_Child1", "child1_marital"],
+    ["Name_of_Child2", "child2_name"], ["Sex_Child2", "child2_sex"], ["DOB_Child2", "child2_dob"], ["Marital_Status_Child2", "child2_marital"],
+    ["Name_of_Child3", "child3_name"], ["Sex_Child3", "child3_sex"], ["DOB_Child3", "child3_dob"], ["Marital_Status_Child3", "child3_marital"],
+    ["Pension Bank", "bank_name"], ["Pension Bank Branch", "bank_branch"], ["PPO", "ppo_number"], ["Bank_Account _Number", "bank_account_number"],
+    ["NOK_Telephone", "alternate_phone"], ["Email", "email"], ["CO_Unit_Name", "co_unit_name"], ["CO_Unit_Telephone_No1", "co_unit_phone"],
+    ["DOCUMENTS 1", null], ["DOCUMENTS 2", null], ["DOCUMENTS 3", null], ["DOCUMENTS 4", null],
+  ];
+  const EXTRA_HEADINGS = [["Ward Member Name", "extra:ward_member_name"], ["Panchayat", "extra:panchayat"], ["Zone Code", "extra:zone_code"]];
+
+  const FIELDS = {
+    date_of_death: ["Date of casualty", "Soldier"], unit: ["Serving unit", "Soldier"], service_number: ["Army number", "Soldier"],
+    rank: ["Rank", "Soldier"], soldier_name: ["Soldier's name", "Soldier", true], regiment: ["Parent unit", "Soldier"],
+    cause_of_death: ["Cause of death", "Soldier"], place_of_death: ["Place of death", "Soldier"],
+    widow_name: ["Name of NOK", "Next of kin", true], nok_relationship: ["Relationship", "Next of kin"], phone: ["Phone number", "Next of kin"],
+    alternate_phone: ["NOK telephone", "Next of kin"], email: ["Email", "Next of kin"],
+    village: ["Village", "Address"], town: ["Town", "Address"], tehsil: ["Tehsil", "Address"], post_office: ["Post office", "Address"],
+    district: ["District", "Address"], state: ["State", "Address"], pincode: ["PIN code", "Address"], geolocation: ["GPS location of house", "Address"],
+    ppo_number: ["PPO number", "Pension and bank"], bank_name: ["Pension bank", "Pension and bank"], bank_branch: ["Pension bank branch", "Pension and bank"],
+    bank_account_number: ["Bank account number", "Pension and bank"], bank_ifsc: ["IFSC code", "Pension and bank"],
+    bank_account_holder: ["Account holder's name", "Pension and bank"], bank_address: ["Bank address", "Pension and bank"],
+    co_unit_name: ["CO unit name", "Unit contact"], co_unit_phone: ["CO unit telephone", "Unit contact"],
+    record_office: ["Record office", "CEA"], correspondence_address: ["Correspondence address", "CEA"], correspondence_pincode: ["Correspondence PIN code", "CEA"],
+    annual_income: ["Annual income", "Other"], notes: ["Notes or remarks", "Other"],
+  };
+  for (const n of [1, 2, 3]) {
+    FIELDS[`child${n}_name`] = [`Child ${n} name`, "Children"];
+    FIELDS[`child${n}_sex`] = [`Child ${n} sex`, "Children"];
+    FIELDS[`child${n}_dob`] = [`Child ${n} date of birth`, "Children"];
+    FIELDS[`child${n}_marital`] = [`Child ${n} marital status`, "Children"];
+  }
+
+  // New columns the colonel has brought in from his sheets (the "pocket"). Starts empty.
+  function freshExtras() { return {}; }
+
+  // A renamed column shows its new name everywhere.
+  const label = (key, extras) => S.renamed[key] ?? (key.startsWith("extra:") ? (extras[key]?.label ?? key.slice(6).replace(/_/g, " ")) : (FIELDS[key]?.[0] ?? key));
+  const isRequired = (key) => !!FIELDS[key]?.[2];
+
+  function dob(minAge, maxAge) {
+    const age = minAge + Math.floor(rand() * (maxAge - minAge + 1));
+    const d = 1 + Math.floor(rand() * 28), m = 1 + Math.floor(rand() * 12), y = 2026 - age;
+    return `${String(d).padStart(2, "0")}-${String(m).padStart(2, "0")}-${y}`;
+  }
+
+  function person() {
+    const surname = pick(SURNAMES);
+    const [district, state, gps] = pick(PLACES);
+    const regiment = pick(REGIMENTS);
+    const short = regiment.replace(/^The /, "").split(" ")[0].toUpperCase();
+    const kids = [];
+    const count = Math.floor(rand() * 4);
+    for (let i = 0; i < count; i++) {
+      const boy = rand() < 0.5;
+      kids.push({ name: `${pick(boy ? BOYS : GIRLS)} ${surname}`, sex: boy ? "male" : "female", dob: dob(3, 24), marital: rand() < 0.15 ? "Married" : "Unmarried" });
+    }
+    const values = {
+      date_of_death: dob(1, 10).replace(/-\d{4}$/, (y) => "-" + String(2016 + Math.floor(rand() * 10))),
+      unit: `${1 + Math.floor(rand() * 21)} ${short}`, service_number: `${1000000 + Math.floor(rand() * 18000000)}${pick(["", "", "A", "H", "K"])}`,
+      rank: pick(RANKS), soldier_name: `${pick(MEN)} ${surname}`, widow_name: `${pick(WOMEN)} ${surname}`, nok_relationship: "WIFE",
+      district, tehsil: pick(TEHSILS), town: pick(TOWNS), village: pick(VILLAGES), post_office: pick(VILLAGES), state,
+      pincode: rand() < 0.7 ? String(110001 + Math.floor(rand() * 600000)) : "", phone: rand() < 0.9 ? "+91" + digits(10) : "",
+      regiment, geolocation: rand() < 0.75 ? gps : "", ppo_number: `${pick(["S", "F"])}/${100000 + Math.floor(rand() * 900000)}/${2016 + Math.floor(rand() * 10)}`,
+      bank_name: pick(BANKS), bank_branch: `${district} ${pick(["Main", "Cantt", "City"])} Branch`,
+      bank_account_number: String(10000000000 + Math.floor(rand() * 89999999999)), alternate_phone: rand() < 0.4 ? "+91" + digits(10) : "",
+      email: rand() < 0.3 ? `${surname.toLowerCase()}${10 + Math.floor(rand() * 89)}@mockmail.example` : "",
+      co_unit_name: `${1 + Math.floor(rand() * 21)} ${regiment.replace(/^The /, "")}`, co_unit_phone: rand() < 0.6 ? "+91" + digits(10) : "",
+      "extra:ward_member_name": pick(["Suresh Kumar", "Ramesh Lal", "Harbans Singh", "Meena Devi"]),
+      "extra:panchayat": pick(["Kotla", "Nangal", "Rampur", "Khera", "Dhani"]), "extra:zone_code": "Z-" + (1 + Math.floor(rand() * 7)),
+    };
+    kids.forEach((k, i) => {
+      const n = i + 1;
+      values[`child${n}_name`] = k.name; values[`child${n}_sex`] = k.sex; values[`child${n}_dob`] = k.dob; values[`child${n}_marital`] = k.marital;
+    });
+    return values;
+  }
+
+  // Families already "on record", for the document picker and the update rows.
+  function buildFamilies() {
+    rand = rng(77);
+    const list = [];
+    for (let i = 0; i < 40; i++) {
+      const v = person();
+      const members = [{ id: `m${i}-0`, name: v.widow_name, rel: "NOK" }];
+      for (const n of [1, 2, 3]) if (v[`child${n}_name`]) members.push({ id: `m${i}-${n}`, name: v[`child${n}_name`], rel: v[`child${n}_sex`] === "male" ? "son" : "daughter", dob: v[`child${n}_dob`],
+        cls: "", school: "", schoolPlace: "", board: "", admission: "", hostel: false });
+      list.push({ code: `AP-2026-${String(i + 1).padStart(4, "0")}`, values: v, members, docs: [{ type: "Death certificate", who: "Whole family", file: false }, { type: "PPO (Pension Payment Order)", who: "Whole family", file: false }] });
+    }
+    return list;
+  }
+
+  function buildRows(variant, families) {
+    rand = rng(variant === "extra" ? 31 : 13);
+    const plan = variant === "extra" ? { create: 12, update: 12, unchanged: 0, needs: 6, dup: 0 } : { create: 43, update: 9, unchanged: 3, needs: 5, dup: 3 };
+    const rows = [];
+    let n = 2; // row 1 is the heading row
+    const add = (r) => { r.id = "r" + n; r.rowNum = n++; r.edited = new Set(); r.excluded = false; rows.push(r); };
+
+    for (let i = 0; i < plan.update; i++) {
+      const fam = families[i % families.length];
+      const v = { ...fam.values, phone: "+91" + digits(10), bank_branch: fam.values.bank_branch.includes("Main") ? fam.values.bank_branch.replace("Main", "Cantt") : `${fam.values.district} Main Branch` };
+      const changes = [
+        ["Phone number", fam.values.phone || "(blank)", v.phone],
+        ["Pension bank branch", fam.values.bank_branch, v.bank_branch],
+      ];
+      if (i === 0) {
+        const boy = rand() < 0.5;
+        const slot = [1, 2, 3].find((s) => !fam.values[`child${s}_name`]) || 3;
+        v[`child${slot}_name`] = `${pick(boy ? BOYS : GIRLS)} ${fam.values.widow_name.split(" ").pop()}`;
+        v[`child${slot}_sex`] = boy ? "male" : "female"; v[`child${slot}_dob`] = dob(4, 9); v[`child${slot}_marital`] = "Unmarried";
+        changes.push([`Child ${slot}`, null, `${v[`child${slot}_name`]} (new child)`]);
+      }
+      if (i === 1 && fam.values.child1_dob) {
+        const old = fam.values.child1_dob; const [d, m, y] = old.split("-");
+        v.child1_dob = `${String(Math.min(28, +d + 1)).padStart(2, "0")}-${m}-${y}`;
+        changes.push(["Child 1 date of birth", old, v.child1_dob]);
+      }
+      add({ action: "update", values: v, code: fam.code, changes, reasons: [`Same service number (${fam.values.service_number})`, "Widow's name is the same", "Soldier's name is the same", `Same district (${fam.values.district})`, "Same date of death"], score: 100, problems: [] });
+    }
+    for (let i = 0; i < plan.unchanged; i++) {
+      const fam = families[(plan.update + i) % families.length];
+      add({ action: "unchanged", values: { ...fam.values }, code: fam.code, changes: [], reasons: [`Same service number (${fam.values.service_number})`], score: 100, problems: [] });
+    }
+    for (let i = 0; i < plan.create; i++) {
+      const v = person();
+      const problems = [];
+      if (!v.phone) problems.push("No phone number");
+      if (i === 4) { v.phone = ""; problems.push("Phone '98765 4321' is too short"); }
+      const near = rand() < 0.15 ? families[Math.floor(rand() * families.length)] : null;
+      add({ action: "create", values: v, changes: [], problems, code: near?.code, score: near ? 30 : 0, reasons: near ? ["Widow's name is the same"] : [] });
+    }
+    for (let i = 0; i < plan.needs; i++) {
+      const fam = families[(i + 5) % families.length];
+      const v = person(); v.widow_name = fam.values.widow_name; v.district = fam.values.district; v.state = fam.values.state;
+      const both = i % 2 === 0;
+      add({ action: "needs", values: v, code: fam.code, changes: [], problems: [], score: both ? 60 : 45, reasons: both ? ["Widow's name is the same", "Soldier's name is the same"] : ["Widow's name is the same", `Same district (${fam.values.district})`] });
+    }
+    for (let i = 0; i < plan.dup; i++) {
+      const source = rows[plan.update + plan.unchanged + 5 + i * 7];
+      add({ action: "dup", values: { ...source.values }, changes: [], problems: [], dupOf: source.rowNum });
+    }
+    return rows;
+  }
+
+  // ---------- state ----------
+  let S;
+  function reset() {
+    // alwaysOff: columns removed for good — skipped on every future Excel, saved values kept.
+    S = { entries: [], families: buildFamilies(), extras: freshExtras(), alwaysOff: new Set(), renamed: {}, seq: 0, menu: false, attach: false };
+    render();
+  }
+  const newId = () => "e" + (++S.seq);
+  const entry = (id) => S.entries.find((e) => e.id === id);
+  const rowOf = (e, rid) => e.rows.find((r) => r.id === rid);
+
+  // ---------- helpers for an Excel upload ----------
+  // The second sample says just "UNIT", which could be Serving unit or Parent unit, so he is asked.
+  function headingsOf(e) {
+    if (e.variant !== "extra") return HEADINGS;
+    return [...HEADINGS.map(([h, k]) => h === "SERVING UNIT" ? ["UNIT", "?unit"] : [h, k]), ...EXTRA_HEADINGS];
+  }
+  function activeColumns(e) {
+    const cols = [], seen = new Set();
+    for (const [h] of headingsOf(e)) {
+      const key = e.mapping[h];
+      if (!key || seen.has(key) || e.removed.has(h) || S.alwaysOff.has(key)) continue;
+      seen.add(key);
+      cols.push({ key, heading: h, added: false });
+    }
+    for (const [key, val] of Object.entries(e.added)) cols.push({ key, heading: null, added: true, value: val });
+    return cols;
+  }
+  function rowValue(e, row, key) {
+    if (row.values[key] !== undefined && row.values[key] !== "") return row.values[key];
+    if (key in e.added) return e.added[key];
+    return "";
+  }
+  const display = (key, v) => (key.endsWith("_sex") && v) ? (v === "male" ? "male" : "female") : v;
+  const phoneOk = (v) => /^(\+?91)?[6-9]\d{9}$/.test(v.replace(/[\s-]/g, ""));
+  const cleanPhone = (v) => "+91" + v.replace(/[\s-]/g, "").replace(/^\+?91(?=\d{10}$)/, "");
+  function dateOk(v) {
+    const m = v.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/); if (!m) return false;
+    const d = new Date(+m[3], +m[2] - 1, +m[1]);
+    return d.getDate() === +m[1] && d.getMonth() === +m[2] - 1 && d <= new Date(2026, 10, 30);
+  }
+
+  // ---------- rendering ----------
+  const icons = {
+    excel: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="4" width="17" height="16" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M9.5 9.5V20M3.5 15h17" stroke="currentColor" stroke-width="1.8"/></svg>',
+    doc: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10A.5.5 0 0 1 7 20V3.5z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.5V8h4M9.5 12.5h5M9.5 16h5" stroke="currentColor" stroke-width="1.8"/></svg>',
+  };
+
+  function render() {
+    const c = document.getElementById("convo");
+    c.innerHTML = S.entries.length ? S.entries.map(renderEntry).join("") : renderEmpty();
+    document.getElementById("attach-menu").hidden = !S.attach;
+    document.getElementById("sidebar").classList.toggle("open", S.menu);
+    document.getElementById("scrim").hidden = !S.menu;
+  }
+
+  function renderEmpty() {
+    return `<div class="empty">
+      <h1>Good to see you, Colonel</h1>
+      <p>What would you like to do?</p>
+      <div class="cards">
+        <button type="button" class="card-btn" data-act="drop-excel" data-variant="standard"><b>Upload Excel</b><span>63 families, 42 columns</span></button>
+        <button type="button" class="card-btn" data-act="drop-excel" data-variant="extra"><b>Upload Excel with new columns</b><span>3 new columns, 1 unclear</span></button>        <button type="button" class="card-btn" data-act="cea-choose"><b>Fill a form</b><span>CEA — see who qualifies, fill and download</span></button>
+      </div>
+    </div>`;
+  }
+
+  function renderEntry(e) {
+    if (e.kind === "text") return `<p class="bubble">${esc(e.text)}</p>`;
+    if (e.kind === "cea") return renderCea(e);
+    const chip = `<div class="file-chip">${e.kind === "doc" ? icons.doc : icons.excel}<div><b>${esc(e.file)}</b><small>${esc(e.size)}</small></div></div>`;
+    if (e.kind === "doc") return chip + renderDoc(e);
+    return chip + renderExcel(e);
+  }
+
+  // ----- Excel: the sheet card -----
+  function renderExcel(e) {
+    if (e.stage === "reading") return `<p class="muted">Reading the sheet...</p>`;
+    if (e.stage === "mapping") return renderMapping(e);
+    if (e.stage === "done") return renderResult(e);
+    return renderPreview(e);
+  }
+
+  // Shows his columns as he wrote them. Only asks when a heading could mean two things.
+  function renderMapping(e) {
+    const hs = headingsOf(e);
+    const rowsN = e.variant === "extra" ? 30 : 63;
+    let anyOff = false, anyNew = false;
+    const chips = hs.map(([h]) => {
+      const key = e.mapping[h];
+      if (e.ask[h]) return `<li class="chip plain">${esc(h)}</li>`;
+      if (e.proposed[h]) { anyNew = true; return `<li class="chip new"><span>${esc(h)}</span><b>New</b></li>`; }
+      if (!key || S.alwaysOff.has(key)) { anyOff = true; return `<li class="chip off">${esc(h)}</li>`; }
+      return `<li class="chip plain">${esc(h)}</li>`;
+    }).join("");
+    const allLabels = [...Object.keys(FIELDS), ...Object.keys(S.extras)].map((k) => `<option value="${esc(label(k, S.extras))}"></option>`).join("");
+    const asks = Object.entries(e.ask).map(([h, opts], i) => {
+      const custom = e.proposed[h] ? `New column: ${e.proposed[h]}` : (e.mapping[h] && !opts.includes(e.mapping[h]) ? label(e.mapping[h], S.extras) : "");
+      return `<div class="confirm" style="border-color:var(--accent);margin-top:16px">
+      <span><b>${esc(h)}</b> — which one?</span>
+      ${opts.map((k) => `<button type="button" class="${e.mapping[h] === k ? "btn sm" : "btn-ghost"}" data-act="answer" data-id="${e.id}" data-h="${esc(h)}" data-key="${k}">${esc(label(k, S.extras))}</button>`).join("")}
+      <button type="button" class="${custom ? "btn sm" : "btn-ghost"}" data-act="ask-other" data-id="${e.id}" data-h="${esc(h)}">${custom ? esc(custom) : "Other…"}</button>
+      ${e.askOther[h] ? `<span style="display:flex;gap:8px;flex:1 1 260px">
+        <input class="field" list="cols-${e.id}" id="other-${e.id}-${i}" placeholder="Type a column name" aria-label="Column for ${esc(h)}">
+        <button type="button" class="btn sm" data-act="use-other" data-id="${e.id}" data-h="${esc(h)}" data-i="${i}">Use</button></span>` : ""}
+    </div>`;
+    }).join("") + (Object.keys(e.ask).length ? `<datalist id="cols-${e.id}">${allLabels}</datalist>` : "");
+    const legend = [anyOff ? "Grey = not imported" : "", anyNew ? "New = will be added" : ""].filter(Boolean).join(" · ");
+
+    return `<div class="panel">
+      <h2>Your sheet</h2>
+      <p class="lede">${rowsN} rows · ${hs.length} columns</p>
+      ${asks}
+      <ul class="chips" style="margin-top:16px">${chips}</ul>
+      ${legend ? `<p class="muted small" style="margin:12px 0 0">${legend}</p>` : ""}
+      ${e.mapError ? `<p class="danger" style="margin-top:12px">${esc(e.mapError)}</p>` : ""}
+      <div class="actions">
+        <button type="button" class="btn" data-act="confirm-map" data-id="${e.id}">Continue</button>
+      </div>
+    </div>`;
+  }
+
+  // ----- Excel: the preview -----
+  const GROUPS = [
+    ["create", "New"], ["update", "Updates"], ["needs", "Check these"], ["excluded", "Left out"],
+  ];
+
+  // Repeated rows go under "Check these"; unchanged rows are only counted.
+  function renderPreview(e) {
+    const groupOf = (r) => r.excluded ? "excluded" : (r.action === "dup" ? "needs" : r.action);
+    const live = e.rows.filter((r) => !r.excluded);
+    const willWrite = live.filter((r) => ["create", "update", "needs"].includes(r.action)).length;
+    const unchanged = live.filter((r) => r.action === "unchanged").length;
+
+    const groups = GROUPS.map(([g, title]) => {
+      const rows = e.rows.filter((r) => groupOf(r) === g);
+      if (!rows.length) return "";
+      const open = e.open[g] ?? g === "needs";
+      return `<button type="button" class="group-head" data-act="toggle-group" data-id="${e.id}" data-g="${g}"><span>${title} (${rows.length})</span><span class="tiny">${open ? "hide" : "show"}</span></button>
+        ${open ? `<ul class="list">${rows.map((r) => renderRow(e, r)).join("")}</ul>` : ""}`;
+    }).join("");
+
+    return `<div class="panel">
+      <h2>Check before importing</h2>
+      ${renderColumns(e)}
+      ${groups}
+      ${unchanged ? `<p class="muted small" style="margin:12px 0 0">${unchanged} families are already saved with the same details — nothing to change.
+        <button type="button" class="link muted-link" data-act="toggle" data-id="${e.id}" data-key="showSame">${e.showSame ? "hide" : "show"}</button></p>
+        ${e.showSame ? `<ul class="list">${live.filter((r) => r.action === "unchanged").map((r) => `<li><div class="row-line"><span class="rownum">Row ${r.rowNum}</span>
+          <span class="who"><b>${esc(r.values.widow_name)}</b><small>${esc(r.values.district)} · ${esc(r.code)}</small></span></div></li>`).join("")}</ul>` : ""}` : ""}
+      <div class="actions">
+        <button type="button" class="btn" data-act="import" data-id="${e.id}" ${willWrite ? "" : "disabled"}>Import ${willWrite} rows</button>
+      </div>
+    </div>`;
+  }
+
+  function renderRow(e, r) {
+    const who = r.values.widow_name || r.values.soldier_name || "(no name)";
+    const open = e.openRow === r.id || (e.openRow === undefined && r.action === "needs");
+    const hasDetail = r.changes.length || r.problems.length || r.action === "needs" || r.action === "dup";
+    const editing = e.editRow === r.id;
+    return `<li>
+      <div class="row-line">
+        <span class="rownum">Row ${r.rowNum}</span>
+        <button type="button" class="who" style="text-align:left" data-act="toggle-row" data-id="${e.id}" data-r="${r.id}" ${hasDetail ? "" : "disabled"}>
+          <b class="${r.excluded ? "strike" : ""}">${esc(who)}</b><small>${esc(r.values.district)}</small>
+        </button>
+        <span class="tags">
+          ${r.edited.size ? `<span class="ok">edited</span>` : ""}
+          ${r.changes.length ? `<span class="muted">${r.changes.length} change${r.changes.length === 1 ? "" : "s"}</span>` : ""}
+          ${r.problems.length ? `<span class="warn">${r.problems.length} problem${r.problems.length === 1 ? "" : "s"}</span>` : ""}
+          <button type="button" class="link" data-act="edit-row" data-id="${e.id}" data-r="${r.id}">${editing ? "close" : "edit"}</button>
+        </span>
+      </div>
+      ${editing ? renderEditor(e, r) : ""}
+      ${open && hasDetail && !editing ? `<div class="detail">
+        ${r.changes.length ? `<div class="table-wrap"><table class="changes"><tbody>${r.changes.map(([l, o, n]) => `<tr><td>${esc(l)}</td><td class="strike">${esc(o ?? "(blank)")}</td><td>${esc(n)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+        ${r.problems.map((p) => `<p class="warn small" style="margin:0">${esc(p)}</p>`).join("")}
+        ${r.action === "needs" ? `<p class="small" style="margin:0">Might be ${esc(r.code)} — ${esc(r.reasons.join(", ").toLowerCase())}. Will be added as new and flagged.</p>` : ""}
+        ${r.action === "dup" ? `<p class="small" style="margin:0">Same as row ${r.dupOf}. Won't be imported.</p>` : ""}
+      </div>` : ""}
+    </li>`;
+  }
+
+  function renderEditor(e, r) {
+    const cols = activeColumns(e);
+    return `<div class="editor" style="margin-left:64px">
+      <div class="editor-grid">
+        ${cols.map((c) => `<label><span>${esc(label(c.key, S.extras))}${r.edited.has(c.key) ? "<i>edited</i>" : ""}</span>
+          <input class="field" data-edit="${esc(c.key)}" data-id="${e.id}" data-r="${r.id}" value="${esc(display(c.key, (e.draft[c.key] ?? rowValue(e, r, c.key))))}"></label>`).join("")}
+      </div>
+      <div class="actions" style="margin-top:12px;padding-top:12px">
+        <button type="button" class="btn sm" data-act="save-row" data-id="${e.id}" data-r="${r.id}">Save</button>
+        <button type="button" class="link muted-link" data-act="edit-row" data-id="${e.id}" data-r="${r.id}">Cancel</button>
+        <button type="button" class="link" style="margin-left:auto;color:var(--warning)" data-act="exclude" data-id="${e.id}" data-r="${r.id}">${r.excluded ? "Put back" : "Leave out"}</button>
+      </div>
+    </div>`;
+  }
+
+  function renderColumns(e) {
+    const cols = activeColumns(e);
+    const removing = e.removing ? cols.find((c) => c.key === e.removing) : null;
+    const renaming = e.renaming ? cols.find((c) => c.key === e.renaming) : null;
+    return `<div class="cols">
+      <button type="button" class="cols-head" data-act="toggle" data-id="${e.id}" data-key="colsOpen"><span>Columns (${cols.length})</span><span class="tiny muted">${e.colsOpen ? "hide" : "change"}</span></button>
+      ${e.colsOpen ? `<div class="cols-body">
+        <ul class="chips">${cols.map((c) => `<li class="chip ${c.added ? "added" : ""}">
+          <span>${esc(label(c.key, S.extras))}</span>${c.added && c.value ? `<span class="tiny muted">= ${esc(c.value)}</span>` : ""}
+          <button type="button" class="pill" data-act="ask-rename" data-id="${e.id}" data-key="${esc(c.key)}">Rename</button>
+          ${isRequired(c.key) ? "" : `<button type="button" class="pill" data-act="${c.added ? "remove-added" : "ask-remove"}" data-id="${e.id}" data-key="${esc(c.key)}" data-h="${esc(c.heading ?? "")}">Remove</button>`}</li>`).join("")}</ul>
+        ${renaming ? `<div class="modal-back" data-act="cancel-rename" data-id="${e.id}">
+          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rename-title" data-act="noop">
+            <h3 id="rename-title">Rename &ldquo;${esc(label(renaming.key, S.extras))}&rdquo;</h3>
+            <p>The new name is used everywhere. Saved values are kept.</p>
+            <input class="field" style="margin-top:16px" id="rename-${e.id}" value="${esc(label(renaming.key, S.extras))}" aria-label="New name">
+            ${e.renameError ? `<p class="danger">${esc(e.renameError)}</p>` : ""}
+            <div class="modal-btns">
+              <button type="button" class="btn" data-act="do-rename" data-id="${e.id}">Save</button>
+              <button type="button" class="link muted-link" data-act="cancel-rename" data-id="${e.id}">Cancel</button>
+            </div>
+          </div>
+        </div>` : ""}
+        ${removing ? `<div class="modal-back" data-act="cancel-remove" data-id="${e.id}">
+          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-act="noop">
+            <h3 id="modal-title">Remove &ldquo;${esc(label(removing.key, S.extras))}&rdquo;?</h3>
+            <p>Saved values are kept.</p>
+            <div class="modal-btns">
+              <button type="button" class="btn-ghost" data-act="remove-once" data-id="${e.id}">This Excel only</button>
+              <button type="button" class="btn" style="background:var(--danger);color:var(--bg)" data-act="remove-always" data-id="${e.id}">Always</button>
+              <button type="button" class="link muted-link" data-act="cancel-remove" data-id="${e.id}">Cancel</button>
+            </div>
+          </div>
+        </div>` : ""}
+        ${e.adding ? `<div class="add-row">
+          <input class="field" id="add-key-${e.id}" placeholder="New column name" aria-label="New column name" style="grid-column:span 2">
+          <span style="display:flex;gap:8px"><button type="button" class="btn sm" data-act="add-col" data-id="${e.id}">Add</button><button type="button" class="link muted-link" data-act="toggle" data-id="${e.id}" data-key="adding">Cancel</button></span>
+        </div>` : `<p style="margin:12px 0 0"><button type="button" class="link" data-act="toggle" data-id="${e.id}" data-key="adding">+ Add column</button></p>`}
+        ${e.colError ? `<p class="danger small" style="margin:8px 0 0">${esc(e.colError)}</p>` : ""}
+      </div>` : ""}
+    </div>`;
+  }
+
+  function renderResult(e) {
+    const x = e.result;
+    return `<div class="panel">
+      <h2 class="ok">Done</h2>
+      <ul style="margin:12px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
+        <li>${x.created} new families${x.children ? ` (${x.children} children)` : ""}</li>
+        <li>${x.updated} updated</li>
+        <li>${x.unchanged} no change</li>
+        ${x.dup ? `<li>${x.dup} repeated, skipped</li>` : ""}
+        ${x.excluded ? `<li>${x.excluded} left out</li>` : ""}
+        ${x.corrected ? `<li>${x.corrected} values edited by you</li>` : ""}
+        ${x.issues ? `<li class="warn">${x.issues} to check later</li>` : ""}
+      </ul>
+    </div>`;
+  }
+
+  // ----- documents -----
+  function renderDoc(e) {
+    const fam = e.famIdx != null ? S.families[e.famIdx] : null;
+    let body = "";
+    if (e.stage === "pick") {
+      body = `<h3 style="font-size:15px;margin:16px 0 0">Which family is this for?</h3>
+        <input class="field" style="margin-top:8px" id="doc-q-${e.id}" data-docq="${e.id}" placeholder="Search by name, family code, district or phone" value="${esc(e.q || "")}">
+        <ul class="picker-list" id="doc-list-${e.id}">${familyList(e)}</ul>`;
+    } else if (e.stage === "details") {
+      body = `<h3 style="font-size:15px;margin:16px 0 0">Who does it belong to?</h3>
+        <div class="radios">
+          <label><input type="radio" name="belong-${e.id}" data-act="belong" data-id="${e.id}" data-m="" ${e.member == null ? "checked" : ""}> The whole family <span class="muted tiny">(e.g. service booklet, PPO, cancelled cheque)</span></label>
+          ${fam.members.map((m) => `<label><input type="radio" name="belong-${e.id}" data-act="belong" data-id="${e.id}" data-m="${m.id}" ${e.member === m.id ? "checked" : ""}> ${esc(m.name)} <span class="muted tiny">${esc(m.rel)}${m.dob ? `, born ${esc(m.dob)}` : ""}</span></label>`).join("")}
+        </div>
+        <h3 style="font-size:15px;margin:16px 0 0">What is it?</h3>
+        <select class="field" style="margin-top:8px" id="doc-type-${e.id}" aria-label="Document type">
+          <option value="">Choose the document type...</option>
+          ${["Service booklet", "PPO (Pension Payment Order)", "Death certificate", "Mark sheet", "Certificate from school / principal", "Fee receipt", "Bank passbook", "Cancelled cheque", "Contingent bill (CEA)", "Self declaration by NOK", "Aadhaar card", "PAN card", "Birth certificate", "Marriage certificate", "Computer invoice / bill", "Passport photo", "Other"].map((t) => `<option ${e.type === t ? "selected" : ""}>${t}</option>`).join("")}
+        </select>
+        ${e.docError ? `<p class="danger small">${esc(e.docError)}</p>` : ""}
+        <div class="actions" style="border:0;padding-top:0;margin-top:16px">
+          <button type="button" class="btn" data-act="save-doc" data-id="${e.id}">Save document</button>
+          <button type="button" class="link muted-link" data-act="doc-back" data-id="${e.id}">Different family</button>
+        </div>`;
+    } else {
+      const who = e.member == null ? "the whole family" : fam.members.find((m) => m.id === e.member).name;
+      body = `<p class="ok" style="font-size:17px;font-weight:500;margin:16px 0 0">Saved — ${esc(e.type)}, for ${esc(who)}</p>
+        <p style="margin:12px 0 0;font-size:14px;font-weight:500">Documents on record for this family</p>
+        <ul class="docs">${fam.docs.map((d) => `<li><span>${esc(d.type)} <span class="muted">· ${esc(d.who)}</span></span>${d.file ? `<span class="ok">open</span>` : `<span class="badge">record only</span>`}</li>`).join("")}</ul>`;
+    }
+    return `<div class="panel">
+      <h2>Attach a document</h2>
+      <p class="lede">${esc(e.file)}${fam ? ` → <b>${esc(fam.values.widow_name)}</b> (${fam.code})` : ""}</p>
+      ${body}
+      ${e.stage !== "done" ? `<p class="muted tiny" style="margin:12px 0 0">Nothing has been saved yet.</p>` : ""}
+    </div>`;
+  }
+
+  function familyList(e) {
+    const q = (e.q || "").trim().toLowerCase();
+    const found = S.families.map((f, i) => [f, i]).filter(([f]) => !q || [f.values.widow_name, f.code, f.values.district, f.values.phone].join(" ").toLowerCase().includes(q));
+    if (!found.length) return `<li class="muted small" style="padding:8px 4px">No family found.</li>`;
+    return found.map(([f, i]) => `<li><button type="button" data-act="pick-fam" data-id="${e.id}" data-i="${i}"><b>${esc(f.values.widow_name)}</b><small>${f.code} · ${esc(f.values.soldier_name)} · ${esc(f.values.district)}</small></button></li>`).join("");
+  }
+
+  // ---------- CEA form (steps 5 and 6) ----------
+  const AS_OF = new Date(2026, 10, 3);
+  const CEA_A_YEAR = { normal: 2813 * 12, hostel: 8438 * 12 };
+  const rupees = (n) => "₹" + n.toLocaleString("en-IN");
+  const ceaIcons = {
+    pencil: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    trash: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7h14M10 7V4.5h4V7M7 7l1 13h8l1-13" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>',
+    upload: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  };
+  const DOC_TYPES_CEA = ["Mark sheet", "Fee receipt", "Certificate from school", "Contingent bill (CEA)", "Self declaration by NOK", "Cancelled cheque", "Birth certificate", "Other"];
+
+  function parseDmy(s) { const m = /^(\d{1,2})-(\d{1,2})-(\d{4})$/.exec((s || "").trim()); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; }
+  function ageOf(dob) {
+    const d = parseDmy(dob); if (!d) return null;
+    let a = AS_OF.getFullYear() - d.getFullYear();
+    if (AS_OF < new Date(AS_OF.getFullYear(), d.getMonth(), d.getDate())) a--;
+    return a;
+  }
+  const childrenOf = (fam) => fam.members.filter((m) => m.rel === "son" || m.rel === "daughter");
+
+  // The rule: son or daughter, age 4 to 20 (stands in for KG–Class 12 until class is filled),
+  // and one of the two eldest children overall.
+  function ceaCheck(fam, m) {
+    if (!fam) return { ok: false, reason: "Not in the database yet" };
+    if (m.rel !== "son" && m.rel !== "daughter") return { ok: false, reason: "not a son or daughter" };
+    const age = ageOf(m.dob);
+    if (age == null) return { ok: false, reason: "no date of birth" };
+    if (age > 20) return { ok: false, reason: `age ${age}, over 20` };
+    if (age < 4) return { ok: false, reason: `age ${age}, under 4` };
+    const order = childrenOf(fam).filter((c) => parseDmy(c.dob)).sort((a, b) => parseDmy(a.dob) - parseDmy(b.dob));
+    const pos = order.indexOf(m);
+    if (pos > 1) return { ok: false, reason: `${pos === 2 ? "3rd" : pos + 1 + "th"} child — CEA is for the two eldest` };
+    return { ok: true, reason: "" };
+  }
+  const ceaAmount = (m) => m.hostel ? CEA_A_YEAR.hostel : CEA_A_YEAR.normal;
+
+  function newCea(stage, file) {
+    const e = { id: newId(), kind: "cea", stage, file, items: [], n: 0 };
+    S.entries.push(e); S.attach = false;
+    return e;
+  }
+  function fillSuggested(e) {
+    e.items = [];
+    S.families.forEach((f, fi) => childrenOf(f).forEach((m) => { if (ceaCheck(f, m).ok) addItem(e, fi, m); }));
+  }
+  function addItem(e, famIdx, m) { e.items.push({ id: `${e.id}-i${++e.n}`, famIdx, m, docs: [], ready: false }); }
+  const famOfItem = (it) => it.famIdx == null ? null : S.families[it.famIdx];
+
+  // What the add box can suggest: every family and every child in the database.
+  function ceaOptions() {
+    const map = new Map();
+    S.families.forEach((f, fi) => {
+      map.set(`${f.values.widow_name} — family (${f.code}, ${f.values.district})`, { type: "family", fi });
+      childrenOf(f).forEach((m) => map.set(`${m.name} (${f.code})`, { type: "child", fi, m }));
+    });
+    return map;
+  }
+
+  function renderCea(e) {
+    const chip = e.file ? `<div class="file-chip">${icons.doc}<div><b>${esc(e.file)}</b><small>Form</small></div></div>` : "";
+    if (e.stage === "choose") return chip + `<div class="panel">
+      <h2>Which form?</h2>
+      <div class="cards" style="margin-top:16px">
+        <button type="button" class="card-btn" data-act="cea-pick" data-id="${e.id}"><b>CEA</b><span>Children Education Allowance</span></button>
+        <button type="button" class="card-btn" data-act="cea-upload-here" data-id="${e.id}"><b>Upload a form</b><span>PDF of the form</span></button>
+      </div>
+    </div>`;
+    if (e.stage === "reading") return chip + `<p class="muted">Reading the form...</p>`;
+    return chip + renderCeaList(e);
+  }
+
+  function renderCeaList(e) {
+    const ok = e.items.filter((it) => ceaCheck(famOfItem(it), it.m).ok);
+    const total = ok.reduce((n, it) => n + ceaAmount(it.m), 0);
+    const ready = e.items.filter((it) => it.ready).length;
+    const opts = [...ceaOptions().keys()].map((k) => `<option value="${esc(k)}"></option>`).join("");
+    return `<div class="panel">
+      ${e.file ? `<p class="ok small" style="margin:0 0 8px">This is the CEA form.</p>` : ""}
+      <h2>CEA — who qualifies</h2>
+      <p class="lede">${e.items.length} children · ${rupees(total)} a year</p>
+      <p class="muted small" style="margin:4px 0 0">Son or daughter · age 4–20 · the two eldest children</p>
+      ${e.toast ? `<p class="note small">${esc(e.toast)}</p>` : ""}
+      <ul class="list" style="margin-top:12px">${e.items.map((it) => renderCeaRow(e, it)).join("") || `<li class="muted small">No one in the list.</li>`}</ul>
+      <div class="add-row" style="grid-template-columns:minmax(0,1fr) auto">
+        <input class="field" id="cea-add-${e.id}" list="cea-dl-${e.id}" placeholder="Type a family or a person's name" aria-label="Add a family or person">
+        <datalist id="cea-dl-${e.id}">${opts}</datalist>
+        <button type="button" class="btn sm" data-act="cea-add" data-id="${e.id}">Add</button>
+      </div>
+      ${e.addMsg ? `<p class="${e.addWarn ? "warn" : "ok"} small" style="margin:8px 0 0">${esc(e.addMsg)}</p>` : ""}
+      <div class="actions">
+        <button type="button" class="btn" data-act="cea-all" data-id="${e.id}" ${e.items.length ? "" : "disabled"}>Process CEA for all</button>
+        ${ready ? `<button type="button" class="btn-ghost" data-act="cea-download-all" data-id="${e.id}">Download ${ready} PDFs</button>` : ""}
+      </div>
+      ${renderCeaModal(e)}
+    </div>`;
+  }
+
+  function renderCeaRow(e, it) {
+    const fam = famOfItem(it);
+    const chk = ceaCheck(fam, it.m);
+    const age = ageOf(it.m.dob);
+    const sub = fam ? `${it.m.rel === "son" ? "Son" : "Daughter"} of ${fam.values.widow_name} · ${fam.code} · ${fam.values.district}` : "Not in the database yet";
+    return `<li><div class="cea-row">
+      <div class="who"><b>${esc(it.m.name)}</b><small>${esc(sub)}${age != null ? ` · age ${age}` : ""}</small>
+        ${fam && !chk.ok ? `<small class="warn">Doesn't qualify: ${esc(chk.reason)}</small>` : ""}
+        ${it.ready ? `<small class="ok">Form ready</small>` : ""}</div>
+      <div class="cea-actions">
+        <button type="button" class="icon-sq" data-act="cea-edit" data-id="${e.id}" data-it="${it.id}" title="Edit the form" aria-label="Edit the form for ${esc(it.m.name)}">${ceaIcons.pencil}</button>
+        <button type="button" class="icon-sq del" data-act="cea-del" data-id="${e.id}" data-it="${it.id}" title="Remove from this list" aria-label="Remove ${esc(it.m.name)} from this list">${ceaIcons.trash}</button>
+        <button type="button" class="btn-ghost" data-act="cea-docs" data-id="${e.id}" data-it="${it.id}" title="Upload documents">${ceaIcons.upload} ${it.docs.length}/10</button>
+        <button type="button" class="${it.ready ? "btn-ghost" : "btn sm"}" data-act="cea-process" data-id="${e.id}" data-it="${it.id}">${it.ready ? "Download again" : "Process CEA"}</button>
+      </div>
+    </div></li>`;
+  }
+
+  function renderCeaModal(e) {
+    if (!e.modal) return "";
+    const it = e.items.find((x) => x.id === e.modal.it);
+    const wrap = (title, body, wide) => `<div class="modal-back" data-act="cea-close" data-id="${e.id}">
+      <div class="modal ${wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-labelledby="cea-m-${e.id}" data-act="noop">
+        <h3 id="cea-m-${e.id}">${title}</h3>${body}</div></div>`;
+    if (e.modal.type === "form") return ceaFormModal(e, it);
+    if (e.modal.type === "docs") {
+      const full = it.docs.length >= 10;
+      return wrap(`Documents — ${esc(it.m.name)}`, `<p>${it.docs.length} of 10</p>
+        <ul class="docs">${it.docs.map((d, i) => `<li><span>${esc(d)}</span><button type="button" class="link muted-link" data-act="cea-doc-del" data-id="${e.id}" data-i="${i}">remove</button></li>`).join("")}</ul>
+        ${full ? `<p class="warn">10 documents is the limit.</p>` : `<label>Type<select class="field" id="cea-doc-type-${e.id}">${DOC_TYPES_CEA.map((t) => `<option>${t}</option>`).join("")}</select></label>`}
+        <div class="modal-btns">${full ? "" : `<button type="button" class="btn" data-act="cea-doc-add" data-id="${e.id}">Upload</button>`}
+        <button type="button" class="link muted-link" data-act="cea-close" data-id="${e.id}">Done</button></div>`);
+    }
+    // type "family": an unknown person needs a family before the form can be made.
+    return wrap(`Which family is ${esc(it.m.name)} in?`, `<p>${esc(it.m.name)} isn't in the database yet. They'll be saved to this family.</p>
+      <label>Family<select class="field" id="cea-fam-${e.id}"><option value="new">New family</option>
+        ${S.families.map((f, i) => `<option value="${i}">${esc(f.values.widow_name)} (${f.code}, ${esc(f.values.district)})</option>`).join("")}</select></label>
+      <label>Name of NOK (only for a new family)<input class="field" id="cea-nok-${e.id}"></label>
+      <label>Son or daughter?<select class="field" id="cea-rel-${e.id}"><option value="son">Son</option><option value="daughter">Daughter</option></select></label>
+      ${e.modalErr ? `<p class="danger">${esc(e.modalErr)}</p>` : ""}
+      <div class="modal-btns"><button type="button" class="btn" data-act="cea-save-fam" data-id="${e.id}">Continue</button>
+      <button type="button" class="link muted-link" data-act="cea-close" data-id="${e.id}">Cancel</button></div>`);
+  }
+
+  // The CEA form for one child, filled from the database. "f" = family field, "m" = child field.
+  // [key, label, where, wide?]
+  const CEA_FORM = [
+    ["Child", [["name", "Name", "m"], ["dob", "Date of birth", "m"], ["cls", "Class", "m"], ["school", "School name", "m", true], ["schoolPlace", "School place", "m"], ["board", "Board", "m"], ["admission", "Admission number", "m"], ["hostel", "Hostel", "m"]]],
+    ["Next of kin", [["widow_name", "Name of NOK", "f"], ["nok_relationship", "Relationship", "f"], ["phone", "Phone number", "f"], ["correspondence_address", "Correspondence address", "f", true], ["correspondence_pincode", "PIN code", "f"], ["ppo_number", "PPO number", "f"]]],
+    ["Bank", [["bank_name", "Bank", "f"], ["bank_branch", "Branch", "f"], ["bank_account_number", "Account number", "f"], ["bank_ifsc", "IFSC code", "f"], ["bank_account_holder", "Account holder's name", "f"]]],
+    ["Soldier", [["soldier_name", "Soldier's name", "f"], ["service_number", "Army number", "f"], ["rank", "Rank", "f"], ["unit", "Serving unit", "f"], ["date_of_death", "Date of casualty", "f"], ["record_office", "Record office", "f"]]],
+  ];
+  function formValue(fam, m, key, where) {
+    if (where === "m") return key === "hostel" ? (m.hostel ? "Yes" : "No") : (m[key] || "");
+    const v = fam.values;
+    if (key === "correspondence_address" && !v[key]) return [v.village, v.post_office, v.tehsil, v.district, v.state].filter(Boolean).join(", ");
+    if (key === "correspondence_pincode" && !v[key]) return v.pincode || "";
+    if (key === "bank_account_holder" && !v[key]) return v.widow_name || "";
+    return v[key] || "";
+  }
+
+  // The ✏️ pop-up: header and footer stay put, the sections scroll. Saving writes back to the family and child.
+  function ceaFormModal(e, it) {
+    const fam = famOfItem(it), m = it.m;
+    let missing = 0;
+    const secs = CEA_FORM.map(([title, fields]) => {
+      let secMissing = 0;
+      const cells = fields.map(([k, l, w, wide]) => {
+        const v = formValue(fam, m, k, w);
+        if (k === "hostel") return `<label>${l}<select class="field" data-cf="hostel" data-w="m"><option ${v === "No" ? "selected" : ""}>No</option><option ${v === "Yes" ? "selected" : ""}>Yes</option></select></label>`;
+        if (!v) { missing++; secMissing++; }
+        const ph = v ? "" : (k === "dob" ? "DD-MM-YYYY" : "Missing");
+        return `<label class="${wide ? "span2" : ""}">${l}<input class="field ${v ? "" : "missing"}" data-cf="${k}" data-w="${w}" value="${esc(v)}" placeholder="${ph}"></label>`;
+      }).join("");
+      return `<section class="fsec"><div class="fsec-head"><b>${title}</b>${secMissing ? `<span class="warn tiny">${secMissing} missing</span>` : `<span class="ok tiny">Complete</span>`}</div>
+        <div class="fgrid">${cells}</div></section>`;
+    }).join("");
+    return `<div class="modal-back" data-act="cea-close" data-id="${e.id}">
+      <div class="modal wide fmodal" role="dialog" aria-modal="true" aria-labelledby="cea-f-${e.id}" data-act="noop">
+        <div class="fmodal-head"><div>
+            <h3 id="cea-f-${e.id}">CEA form — ${esc(m.name)}</h3>
+            <p>${m.rel === "son" ? "Son" : "Daughter"} of ${esc(fam.values.widow_name)} · ${fam.code}</p>
+            ${missing ? `<span class="pill-warn">${missing} details missing</span>` : `<span class="pill-ok">All details filled</span>`}
+          </div>
+          <button type="button" class="x" data-act="cea-close" data-id="${e.id}" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="fmodal-body">${secs}</div>
+        <div class="fmodal-foot">
+          <div class="amt"><div><span>Academic year</span><b>2025-26</b></div><div><span>Per month</span><b id="cea-rate-${e.id}">${rupees(m.hostel ? 8438 : 2813)}</b></div>
+            <div class="big"><span>Amount (12 months)</span><b id="cea-amt-${e.id}">${rupees(ceaAmount(m))}</b></div></div>
+          <div style="display:flex;gap:12px;align-items:center">
+            <button type="button" class="link muted-link" data-act="cea-close" data-id="${e.id}">Cancel</button>
+            <button type="button" class="btn" data-act="cea-save-form" data-id="${e.id}">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Writes the form back to the family and child. Returns how many values changed.
+  function saveCeaForm(e) {
+    const it = e.items.find((x) => x.id === e.formItem);
+    const fam = famOfItem(it);
+    let changed = 0;
+    document.querySelectorAll(`[data-cf]`).forEach((inp) => {
+      const k = inp.dataset.cf, w = inp.dataset.w, v = inp.value.trim();
+      if (v === formValue(fam, it.m, k, w)) return;
+      changed++;
+      if (w === "m") it.m[k] = k === "hostel" ? /^y/i.test(v) : v; else fam.values[k] = v;
+    });
+    return changed;
+  }
+
+  function openForm(e, it) { e.formItem = it.id; e.modal = { type: "form", it: it.id }; }
+  function makePdf(e, it) { it.ready = true; e.toast = `CEA_${it.m.name.replace(/\s+/g, "_")}.pdf downloaded (prototype: no real file).`; }
+
+  function handleCea(act, t, e) {
+    const it = e && t.dataset.it ? e.items.find((x) => x.id === t.dataset.it) : (e?.modal ? e.items.find((x) => x.id === e.modal.it) : null);
+    switch (act) {
+      case "cea-choose": newCea("choose", null); return true;
+      case "cea-upload": { const n = newCea("reading", "CEA 2026.pdf"); setTimeout(() => { fillSuggested(n); n.stage = "list"; render(); }, 700); return true; }
+      case "cea-upload-here": e.file = "CEA 2026.pdf"; e.stage = "reading"; setTimeout(() => { fillSuggested(e); e.stage = "list"; render(); }, 700); return true;
+      case "cea-pick": fillSuggested(e); e.stage = "list"; return true;
+      case "noop": return false;
+      case "cea-close": e.modal = null; e.modalErr = null; return true;
+      case "cea-edit": if (it.famIdx == null) { e.modal = { type: "family", it: it.id }; return true; } openForm(e, it); return true;
+      case "cea-del": e.items = e.items.filter((x) => x !== it); e.toast = `${it.m.name} removed from this list. Still saved in the database.`; return true;
+      case "cea-docs": e.modal = { type: "docs", it: it.id }; return true;
+      case "cea-doc-add": { const type = document.getElementById(`cea-doc-type-${e.id}`).value; it.docs.push(`${type}.pdf`); return true; }
+      case "cea-doc-del": it.docs.splice(+t.dataset.i, 1); return true;
+      case "cea-process": if (it.famIdx == null) { e.modal = { type: "family", it: it.id }; return true; } makePdf(e, it); return true;
+      case "cea-save-fam": {
+        const sel = document.getElementById(`cea-fam-${e.id}`).value;
+        const rel = document.getElementById(`cea-rel-${e.id}`).value;
+        let fi;
+        if (sel === "new") {
+          const nok = document.getElementById(`cea-nok-${e.id}`).value.trim();
+          if (!nok) { e.modalErr = "Type the name of the NOK for the new family."; return true; }
+          S.families.push({ code: `AP-2026-${String(S.families.length + 1).padStart(4, "0")}`, values: { widow_name: nok, district: "" }, members: [{ id: "n" + Date.now(), name: nok, rel: "NOK" }], docs: [] });
+          fi = S.families.length - 1;
+        } else fi = +sel;
+        it.m.rel = rel; S.families[fi].members.push(it.m); it.famIdx = fi;
+        e.modal = null; e.modalErr = null; openForm(e, it); return true;
+      }
+      case "cea-save-form": {
+        const n = saveCeaForm(e); const name = it.m.name;
+        e.modal = null; e.toast = n ? `${name}: saved ${n} change${n === 1 ? "" : "s"}. Old values kept in history.` : `${name}: nothing changed.`; return true;
+      }
+      case "cea-all": {
+        const known = e.items.filter((x) => x.famIdx != null);
+        known.forEach((x) => { x.ready = true; });
+        const left = e.items.length - known.length;
+        e.toast = `${known.length} forms ready.${left ? ` ${left} need a family first — click Process CEA on them.` : ""}`; return true;
+      }
+      case "cea-download-all": e.toast = `${e.items.filter((x) => x.ready).length} PDFs downloaded (prototype: no real files).`; return true;
+      case "cea-add": {
+        const box = document.getElementById(`cea-add-${e.id}`);
+        const text = box.value.trim(); if (!text) return false;
+        const opts = ceaOptions();
+        let opt = opts.get(text);
+        if (!opt) { // a plain name: use it if exactly one child has that name
+          const hits = [...opts.values()].filter((o) => o.type === "child" && o.m.name.toLowerCase() === text.toLowerCase());
+          if (hits.length === 1) opt = hits[0];
+        }
+        const has = (m) => e.items.some((x) => x.m === m);
+        e.addWarn = false;
+        if (opt?.type === "family") {
+          const fam = S.families[opt.fi];
+          const kids = childrenOf(fam);
+          const add = kids.filter((m) => ceaCheck(fam, m).ok && !has(m));
+          if (add.length) { add.forEach((m) => addItem(e, opt.fi, m)); e.addMsg = `Added ${add.map((m) => m.name).join(", ")}.`; }
+          else { e.addWarn = true; e.addMsg = kids.length ? `No one new to add: ${kids.map((m) => `${m.name} (${has(m) ? "already in the list" : ceaCheck(fam, m).reason})`).join(", ")}.` : "This family has no children on record."; }
+        } else if (opt?.type === "child") {
+          if (has(opt.m)) { e.addWarn = true; e.addMsg = `${opt.m.name} is already in the list.`; }
+          else {
+            addItem(e, opt.fi, opt.m);
+            const chk = ceaCheck(S.families[opt.fi], opt.m);
+            e.addWarn = !chk.ok; e.addMsg = chk.ok ? `Added ${opt.m.name}.` : `Added ${opt.m.name}, but they don't qualify: ${chk.reason}.`;
+          }
+        } else {
+          addItem(e, null, { id: "u" + Date.now(), name: text, rel: "", dob: "", cls: "", school: "", schoolPlace: "", board: "", admission: "", hostel: false });
+          e.addWarn = true; e.addMsg = `Added ${text}. Not in the database yet — you'll pick the family when you click Process CEA.`;
+        }
+        return true;
+      }
+      default: return false;
+    }
+  }
+
+  // ---------- actions ----------
+  function dropExcel(variant) {
+    const e = { id: newId(), kind: "excel", variant, file: variant === "extra" ? "widows_sheet_with_extra_columns.xlsx" : "widows_sheet_sample.xlsx", size: variant === "extra" ? "10 KB" : "13 KB",
+      stage: "reading", mapping: {}, proposed: {}, ask: {}, askOther: {}, removed: new Set(), added: {}, open: {}, draft: {}, rows: [] };
+    for (const [h, key] of headingsOf(e)) {
+      if (key === "?unit") { e.ask[h] = ["unit", "regiment"]; e.mapping[h] = null; }
+      else if (key?.startsWith("extra:")) {
+        if (S.extras[key]) e.mapping[h] = key; else e.proposed[h] = h;
+      } else e.mapping[h] = key;
+    }
+    e.rows = buildRows(variant, S.families);
+    S.entries.push(e); S.attach = false; render();
+    setTimeout(() => { e.stage = "mapping"; render(); }, 600);
+  }
+
+  function dropDoc() {
+    S.entries.push({ id: newId(), kind: "doc", file: "marksheet_class10.pdf", size: "240 KB", stage: "pick" });
+    S.attach = false; render();
+  }
+
+  function confirmMapping(e) {
+    const hs = headingsOf(e);
+    const sources = new Set(Object.values(e.mapping).filter(Boolean));
+    const unanswered = Object.keys(e.ask).filter((h) => !e.mapping[h] && !e.proposed[h]);
+    if (unanswered.length) { e.mapError = `Answer the question about ${unanswered.join(", ")} first.`; render(); return; }
+    const missing = ["soldier_name", "widow_name"].filter((k) => !sources.has(k)).map((k) => FIELDS[k][0]);
+    if (missing.length) { e.mapError = `This sheet has no ${missing.join(" or ")} column.`; render(); return; }
+    // New columns are created now that he has continued.
+    for (const [h] of hs) if (e.proposed[h] && !e.mapping[h]) {
+      const key = "extra:" + e.proposed[h].toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+      S.extras[key] = { label: e.proposed[h] };
+      e.mapping[h] = key;
+    }
+    e.mapError = null; e.stage = "preview"; render();
+  }
+
+  function saveRow(e, r) {
+    const problems = r.problems.filter((p) => !p.startsWith("You typed"));
+    for (const [key, raw] of Object.entries(e.draft)) {
+      const v = raw.trim();
+      const before = rowValue(e, r, key);
+      if (display(key, before) === v) continue;
+      r.edited.add(key);
+      if ((key === "phone" || key === "alternate_phone" || key === "co_unit_phone") && v) {
+        if (!phoneOk(v)) { problems.push(`You typed '${v}' — not a valid phone`); r.values[key] = ""; continue; }
+        r.values[key] = cleanPhone(v);
+        if (key === "phone") { const i = problems.findIndex((p) => /phone|10-digit/.test(p) && !p.startsWith("You typed")); if (i >= 0) problems.splice(i, 1); }
+        continue;
+      }
+      if ((key === "date_of_death" || /_dob$/.test(key)) && v && !dateOk(v)) { problems.push(`You typed '${v}' — not a valid date`); r.values[key] = ""; continue; }
+      r.values[key] = v;
+    }
+    r.problems = problems;
+    e.draft = {}; e.editRow = null; render();
+  }
+
+  function runImport(e) {
+    const live = e.rows.filter((r) => !r.excluded);
+    const by = (a) => live.filter((r) => r.action === a);
+    const childCount = (rs) => rs.reduce((n, r) => n + [1, 2, 3].filter((s) => r.values[`child${s}_name`]).length, 0);
+    const corrected = live.filter((r) => ["create", "update", "needs"].includes(r.action)).reduce((n, r) => n + r.edited.size, 0);
+    e.result = {
+      created: by("create").length + by("needs").length, children: childCount([...by("create"), ...by("needs")]),
+      updated: by("update").length, fields: by("update").reduce((n, r) => n + r.changes.length, 0) + corrected,
+      unchanged: by("unchanged").length, dup: by("dup").length, excluded: e.rows.length - live.length, corrected,
+      needs: by("needs").length, issues: [...by("create"), ...by("update"), ...by("needs")].reduce((n, r) => n + r.problems.length, 0) + by("needs").length,
+    };
+    e.stage = "done"; render();
+  }
+
+  document.addEventListener("click", (ev) => {
+    const t = ev.target.closest("[data-act]");
+    if (!t) { if (S.attach && !ev.target.closest(".composer")) { S.attach = false; render(); } return; }
+    const act = t.dataset.act;
+    const e = t.dataset.id ? entry(t.dataset.id) : null;
+    const r = e && t.dataset.r ? rowOf(e, t.dataset.r) : null;
+
+    switch (act) {
+      case "reset": rand = rng(4242); reset(); window.scrollTo(0, 0); return;
+      case "open-menu": S.menu = true; break;
+      case "close-menu": S.menu = false; break;
+      case "toggle-attach": S.attach = !S.attach; break;
+      case "drop-excel": dropExcel(t.dataset.variant); return;
+      case "drop-doc": dropDoc(); return;
+      case "send": sendText(); return;
+      case "toggle": e[t.dataset.key] = !e[t.dataset.key]; if (t.dataset.key === "adding") e.colError = null; break;
+      case "confirm-map": confirmMapping(e); return;
+      case "toggle-group": { const g = t.dataset.g; const cur = e.open[g] ?? g === "needs"; e.open[g] = !cur; break; }
+      case "toggle-row": { const isOpen = e.openRow === r.id || (e.openRow === undefined && r.action === "needs"); e.openRow = isOpen ? null : r.id; break; }
+      case "edit-row": e.draft = {}; e.editRow = e.editRow === r.id ? null : r.id; break;
+      case "save-row": saveRow(e, r); return;
+      case "exclude": r.excluded = !r.excluded; e.editRow = null; e.draft = {}; break;
+      case "answer": e.mapping[t.dataset.h] = t.dataset.key; delete e.proposed[t.dataset.h]; e.askOther[t.dataset.h] = false; e.mapError = null; break;
+      case "ask-other": e.askOther[t.dataset.h] = !e.askOther[t.dataset.h]; break;
+      case "use-other": {
+        // One of our columns if the name matches, otherwise a new column with that name.
+        const h = t.dataset.h;
+        const text = document.getElementById(`other-${e.id}-${t.dataset.i}`).value.trim();
+        if (!text) return;
+        const key = [...Object.keys(FIELDS), ...Object.keys(S.extras)].find((k) => label(k, S.extras).toLowerCase() === text.toLowerCase());
+        if (key) { e.mapping[h] = key; delete e.proposed[h]; } else { e.mapping[h] = null; e.proposed[h] = text; }
+        e.askOther[h] = false; e.mapError = null; break;
+      }
+      case "ask-remove": e.removing = t.dataset.key; e.removingH = t.dataset.h; break;
+      case "cancel-remove": e.removing = null; break;
+      case "remove-once": e.removed.add(e.removingH); e.removing = null; break;
+      case "remove-always": S.alwaysOff.add(e.removing); e.removing = null; break;
+      case "remove-added": delete e.added[t.dataset.key]; break;
+      case "ask-rename": e.renaming = t.dataset.key; e.renameError = null; break;
+      case "cancel-rename": e.renaming = null; break;
+      case "do-rename": {
+        const text = document.getElementById(`rename-${e.id}`).value.trim();
+        if (!text) { e.renameError = "Type a name."; break; }
+        const clash = [...Object.keys(FIELDS), ...Object.keys(S.extras)].some((k) => k !== e.renaming && label(k, S.extras).toLowerCase() === text.toLowerCase());
+        if (clash) { e.renameError = `There is already a column called “${text}”.`; break; }
+        S.renamed[e.renaming] = text; e.renaming = null; break;
+      }
+      case "add-col": {
+        // A name we know adds that column; any other name creates a new column.
+        const text = document.getElementById(`add-key-${e.id}`).value.trim();
+        const val = "";
+        if (!text) { e.colError = "Type a column name."; break; }
+        let key = [...Object.keys(FIELDS), ...Object.keys(S.extras)].find((k) => label(k, S.extras).toLowerCase() === text.toLowerCase());
+        if (key && activeColumns(e).some((c) => c.key === key)) { e.colError = `“${text}” is already in this Excel.`; break; }
+        if (!key) {
+          key = "extra:" + text.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+          S.extras[key] = { label: text };
+        }
+        S.alwaysOff.delete(key);
+        e.added[key] = val; e.adding = false; e.colError = null; break;
+      }
+      case "import": runImport(e); return;
+      case "pick-fam": e.famIdx = +t.dataset.i; e.member = null; e.type = ""; e.stage = "details"; break;
+      case "belong": e.member = t.dataset.m || null; return; // radio state is already shown
+      case "doc-back": e.stage = "pick"; e.famIdx = null; break;
+      case "save-doc": {
+        const type = document.getElementById(`doc-type-${e.id}`).value;
+        if (!type) { e.docError = "Choose the document type."; break; }
+        const fam = S.families[e.famIdx];
+        e.type = type; e.docError = null;
+        fam.docs.unshift({ type, who: e.member == null ? "Whole family" : fam.members.find((m) => m.id === e.member).name, file: true });
+        e.stage = "done"; break;
+      }
+      default: if (!handleCea(act, t, e)) return;
+    }
+    render();
+  });
+
+  document.addEventListener("input", (ev) => {
+    const t = ev.target;
+    if (t.dataset.edit) { const e = entry(t.dataset.id); e.draft[t.dataset.edit] = t.value; return; }
+    if (t.dataset.docq) { const e = entry(t.dataset.docq); e.q = t.value; document.getElementById(`doc-list-${e.id}`).innerHTML = familyList(e); return; }
+    if (t.id === "prompt-input") {
+      document.getElementById("send-btn").disabled = !t.value.trim();
+      t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 160) + "px";
+    }
+  });
+
+  // Hostel Yes/No in the form changes the amount straight away.
+  document.addEventListener("change", (ev) => {
+    const t = ev.target;
+    if (t.dataset.cf !== "hostel") return;
+    const e = S.entries.find((x) => x.modal?.type === "form");
+    if (!e) return;
+    const yes = t.value === "Yes";
+    document.getElementById(`cea-rate-${e.id}`).textContent = rupees(yes ? 8438 : 2813);
+    document.getElementById(`cea-amt-${e.id}`).textContent = rupees(yes ? CEA_A_YEAR.hostel : CEA_A_YEAR.normal);
+  });
+
+  // Esc closes the remove pop-up.
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Escape") return;
+    const open = S.entries.find((x) => x.removing || x.renaming || x.modal);
+    if (open) { open.removing = null; open.renaming = null; open.modal = null; render(); }
+  });
+
+  document.getElementById("prompt-input").addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendText(); }
+  });
+
+  function sendText() {
+    const box = document.getElementById("prompt-input");
+    const text = box.value.trim();
+    if (!text) return;
+    S.entries.push({ id: newId(), kind: "text", text });
+    box.value = ""; box.style.height = "auto"; document.getElementById("send-btn").disabled = true;
+    render();
+  }
+
+  reset();
+})();
+</script>

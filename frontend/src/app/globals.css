@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* All colours live here as tokens, so the whole look can be changed in one
+   place. Dark mode follows the operating system setting. */
+:root {
+  --bg: #ffffff;
+  --surface: #f6f6f4;
+  --surface-2: #ededea;
+  --border: #e2e2dd;
+  --text: #1b1b18;
+  --text-muted: #6b6b63;
+  --accent: #2f6f4e;
+  --accent-soft: #e6f1eb;
+  --accent-fg: #ffffff;
+  --danger: #b3261e;
+  --warning: #8a5a00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141413;
+    --surface: #1d1d1b;
+    --surface-2: #272724;
+    --border: #33332f;
+    --text: #ececea;
+    --text-muted: #9b9b92;
+    --accent: #6cbd92;
+    --accent-soft: #1e332a;
+    --accent-fg: #0f1a14;
+    --danger: #f2b8b5;
+    --warning: #e8c37a;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #141413;
+  --surface: #1d1d1b;
+  --surface-2: #272724;
+  --border: #33332f;
+  --text: #ececea;
+  --text-muted: #9b9b92;
+  --accent: #6cbd92;
+  --accent-soft: #1e332a;
+  --accent-fg: #0f1a14;
+  --danger: #f2b8b5;
+  --warning: #e8c37a;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A quiet scrollbar that does not fight the page. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
