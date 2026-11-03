@@ -56,17 +56,18 @@ function Row({
 
   return (
     <li className="border-t border-border py-2.5">
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2 sm:gap-3">
         <button
           onClick={() => hasDetail && setOpen((v) => !v)}
-          className={`flex min-w-0 flex-1 items-start gap-3 text-left ${
+          aria-expanded={hasDetail ? open : undefined}
+          className={`flex min-w-0 flex-1 flex-wrap items-start gap-x-3 gap-y-1 text-left ${
             hasDetail ? "" : "cursor-default"
           }`}
         >
           <span className="w-12 shrink-0 pt-0.5 text-xs text-muted">
             Row {row.row_number}
           </span>
-          <span className="min-w-0 flex-1">
+          <span className="min-w-0 flex-1 basis-40">
             <span
               className={`block truncate text-[15px] font-medium ${
                 row.skipped_by_user ? "text-muted line-through" : ""
@@ -80,7 +81,7 @@ function Row({
               {row.duplicate_of_row && ` · same as row ${row.duplicate_of_row}`}
             </span>
           </span>
-          <span className="flex shrink-0 items-center gap-2 pt-0.5">
+          <span className="flex basis-full flex-wrap items-center gap-x-2 gap-y-0.5 pl-[3.75rem] sm:basis-auto sm:pl-0 sm:pt-0.5">
             {row.edited_fields.length > 0 && (
               <span className="text-xs text-accent">
                 {row.edited_fields.length} corrected
@@ -105,15 +106,16 @@ function Row({
         {row.fields.length > 0 && (
           <button
             onClick={() => setEditing((v) => !v)}
-            className="shrink-0 pt-0.5 text-xs text-accent underline"
+            aria-expanded={editing}
+            className="-my-1.5 min-h-10 shrink-0 rounded-full border border-border px-3.5 text-[14px] font-medium text-accent hover:bg-surface-2"
           >
-            {editing ? "close" : "edit"}
+            {editing ? "Close" : "Edit"}
           </button>
         )}
       </div>
 
       {editing && (
-        <div className="pl-12">
+        <div className="sm:pl-12">
           <RowEditor
             importId={importId}
             row={row}
@@ -124,21 +126,25 @@ function Row({
       )}
 
       {open && (
-        <div className="mt-2 space-y-2 pl-12">
+        <div className="mt-2 space-y-2 sm:pl-12">
           {row.changes.length > 0 && (
-            <table className="w-full text-[14px]">
-              <tbody>
-                {row.changes.map((change) => (
-                  <tr key={change.field_name} className="align-top">
-                    <td className="py-1 pr-3 text-muted">{change.label}</td>
-                    <td className="py-1 pr-3 text-muted line-through">
-                      {change.old_value ?? "(blank)"}
-                    </td>
-                    <td className="py-1 font-medium">{change.new_value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            // A list, not a table: on a phone each change stacks as label, then old → new.
+            <ul className="space-y-1.5 text-[15px]">
+              {row.changes.map((change) => (
+                <li
+                  key={change.field_name}
+                  className="grid gap-x-3 rounded-lg bg-bg px-3 py-2 sm:grid-cols-[minmax(8rem,auto)_1fr]"
+                >
+                  <span className="text-[14px] text-muted">{change.label}</span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">
+                    <span className="text-muted line-through">{change.old_value ?? "(blank)"}</span>
+                    <span className="px-1.5 text-muted" aria-hidden="true">→</span>
+                    <span className="sr-only"> changes to </span>
+                    <span className="font-medium">{change.new_value}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
           {row.problems.map((problem, i) => (
             <p key={i} className="text-[14px] text-warning">
@@ -184,7 +190,8 @@ function Group({
     <div className="mt-4">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-lg bg-surface-2 px-3 py-2.5 text-left"
+        aria-expanded={open}
+        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2.5 text-left"
       >
         <span className="text-[15px] font-medium">
           {rows.length} — {ACTION_LABELS[action]}
@@ -246,8 +253,8 @@ export default function ImportPreview({ importId }: Props) {
 
   if (result) {
     return (
-      <div className="rounded-2xl border border-border bg-surface p-5">
-        <h2 className="text-[17px] font-semibold text-accent">Import finished</h2>
+      <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
+        <h2 className="text-[18px] font-semibold text-accent">Import finished</h2>
         <ul className="mt-3 space-y-1 text-[15px]">
           <li>{result.created} families added</li>
           <li>
@@ -294,8 +301,8 @@ export default function ImportPreview({ importId }: Props) {
     (preview.counts.needs_decision ?? 0);
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <h2 className="text-[17px] font-semibold">What will change</h2>
+    <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
+      <h2 className="text-[18px] font-semibold">What will change</h2>
       <p className="mt-1 text-[15px] leading-relaxed text-muted">
         I checked all {preview.total_rows} rows against the families already on record.
         Nothing has been saved yet.
@@ -322,8 +329,8 @@ export default function ImportPreview({ importId }: Props) {
         <button
           onClick={runImport}
           disabled={importing || willWrite === 0}
-          className="rounded-full bg-accent px-5 py-2.5 text-[15px] font-medium text-accent-fg
-            disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted"
+          className="w-full rounded-full bg-accent px-6 py-3 text-[17px] font-semibold text-accent-fg
+            disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted sm:w-auto"
         >
           {importing ? "Importing..." : `Import ${willWrite} rows`}
         </button>

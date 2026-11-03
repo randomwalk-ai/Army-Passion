@@ -65,7 +65,7 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-bg">
+    <div className="app-height flex overflow-hidden bg-bg">
       <Sidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -95,11 +95,11 @@ export default function Home() {
           if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
         }}
       >
-        <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
+        <header className="pt-safe flex min-h-14 shrink-0 items-center gap-2 px-3 md:px-5">
           <button
             onClick={() => setSidebarOpen(true)}
             aria-label="Open menu"
-            className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-text md:hidden"
+            className="flex h-11 w-11 items-center justify-center rounded-xl text-muted hover:bg-surface-2 hover:text-text md:hidden"
           >
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path

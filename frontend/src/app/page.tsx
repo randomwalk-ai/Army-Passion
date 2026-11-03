@@ -61,16 +61,16 @@ function StatTile({ stat, large }: { stat: Stat; large: boolean }) {
   const attention = stat.tone === "attention" && stat.value > 0;
   const body = (
     <>
-      <p className={`font-medium text-muted ${large ? "text-[17px]" : "text-[15px]"}`}>{stat.label}</p>
+      <p className={`font-medium leading-snug text-muted ${large ? "text-[16px] sm:text-[17px]" : "text-[15px]"}`}>{stat.label}</p>
       <p
-        className={`mt-1 font-semibold tabular-nums tracking-tight ${large ? "text-5xl sm:text-6xl" : "text-4xl"}`}
+        className={`mt-1 font-semibold tabular-nums tracking-tight ${large ? "text-4xl sm:text-6xl" : "text-3xl sm:text-4xl"}`}
       >
         {stat.value.toLocaleString("en-IN")}
       </p>
       {stat.hint && (
-        <p className="mt-2 flex items-center gap-1.5 text-[15px] text-muted">
+        <p className="mt-2 flex items-start gap-1.5 text-[14px] leading-snug text-muted sm:text-[15px]">
           {attention && (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="shrink-0 text-warning" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="mt-0.5 shrink-0 text-warning" aria-hidden="true">
               <path d="M12 3l10 18H2L12 3z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
               <path d="M12 10v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               <circle cx="12" cy="17.2" r="1.1" fill="currentColor" />
@@ -82,7 +82,7 @@ function StatTile({ stat, large }: { stat: Stat; large: boolean }) {
       )}
     </>
   );
-  const classes = `block rounded-2xl border bg-surface p-5 sm:p-6 ${
+  const classes = `block min-w-0 rounded-2xl border bg-surface p-4 sm:p-6 ${
     attention ? "border-warning/50" : "border-border"
   }`;
   return stat.href ? (
@@ -96,9 +96,9 @@ function StatTile({ stat, large }: { stat: Stat; large: boolean }) {
 
 function SkeletonTiles() {
   return (
-    <div className="grid gap-4 sm:grid-cols-2" aria-hidden="true">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4" aria-hidden="true">
       {[0, 1].map((i) => (
-        <div key={i} className="h-40 animate-pulse rounded-2xl bg-surface" />
+        <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface sm:h-40" />
       ))}
     </div>
   );
@@ -121,8 +121,8 @@ export default function Home() {
 
   return (
     <AppShell>
-      <div className="mb-8">
-        <p className="text-[16px] text-muted">{today()}</p>
+      <div className="mb-6 sm:mb-8">
+        <p className="text-[15px] text-muted sm:text-[16px]">{today()}</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">{greeting()}, {CURRENT_USER.name.split(" ")[0]}</h1>
       </div>
 
@@ -144,13 +144,13 @@ export default function Home() {
           <SkeletonTiles />
         ) : (
           <>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
               {main.map((s) => (
                 <StatTile key={s.key} stat={s} large />
               ))}
             </div>
             {rest.length > 0 && (
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-3">
                 {rest.map((s) => (
                   <StatTile key={s.key} stat={s} large={false} />
                 ))}
@@ -161,7 +161,7 @@ export default function Home() {
       </section>
 
       {/* ---------- what he can do ---------- */}
-      <section aria-labelledby="actions" className="mt-12">
+      <section aria-labelledby="actions" className="mt-10 sm:mt-12">
         <h2 id="actions" className="mb-4 text-xl font-semibold">
           What would you like to do?
         </h2>
@@ -180,7 +180,7 @@ export default function Home() {
                   </svg>
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2 text-[19px] font-semibold">
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[18px] font-semibold sm:text-[19px]">
                     {a.title}
                     {!a.href && (
                       <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-muted">
@@ -196,7 +196,7 @@ export default function Home() {
               <Link
                 key={a.title}
                 href={a.href}
-                className="group flex gap-4 rounded-2xl border border-border bg-bg p-5 transition
+                className="group flex gap-4 rounded-2xl border border-border bg-bg p-4 transition sm:p-5
                   hover:border-accent hover:bg-surface hover:shadow-sm"
               >
                 {inner}
@@ -215,7 +215,7 @@ export default function Home() {
               <div
                 key={a.title}
                 aria-disabled="true"
-                className="flex gap-4 rounded-2xl border border-dashed border-border bg-bg p-5 opacity-80"
+                className="flex gap-4 rounded-2xl border border-dashed border-border bg-bg p-4 opacity-80 sm:p-5"
               >
                 {inner}
               </div>

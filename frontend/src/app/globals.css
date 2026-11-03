@@ -71,3 +71,58 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
 }
+
+/* ---------- phones ---------- */
+
+/* Full height that also works on older iPhones without dvh support. */
+.app-height {
+  height: 100vh;
+  height: 100dvh;
+}
+
+html {
+  /* Stops phones enlarging text on their own when turned sideways. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  /* Long army numbers, IFSC codes or emails wrap instead of pushing the page sideways. */
+  overflow-wrap: break-word;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+label,
+input,
+select,
+textarea {
+  /* No double-tap-to-zoom delay on taps. */
+  touch-action: manipulation;
+}
+
+/* iPhones zoom the whole page into any text box under 16px. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
+}
+
+/* Keeps content clear of the iPhone home bar and notch. */
+.pb-safe {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* A row you can swipe sideways, without a visible scrollbar. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

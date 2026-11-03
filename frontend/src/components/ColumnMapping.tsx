@@ -150,8 +150,8 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5">
-      <h2 className="text-[17px] font-semibold">What is in each column?</h2>
+    <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
+      <h2 className="text-[18px] font-semibold">What is in each column?</h2>
       <p className="mt-1 text-[15px] leading-relaxed text-muted">
         I read <span className="font-medium text-text">{result.filename}</span> — sheet
         &ldquo;{result.sheet_name}&rdquo;, headings on row {result.header_row_number},{" "}
@@ -170,7 +170,7 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
           <div>
             <button
               onClick={() => setShowRecognised((v) => !v)}
-              className="flex w-full items-center justify-between rounded-lg bg-surface-2
+              className="flex min-h-12 w-full items-center justify-between gap-3 rounded-lg bg-surface-2
                 px-3 py-2.5 text-left"
             >
               <span className="text-[15px] font-medium">
@@ -246,14 +246,14 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
                           </p>
                         )}
                       </div>
-                      <div className="flex shrink-0 gap-1.5" role="group" aria-label={column.source_heading}>
+                      <div className="flex gap-1.5 sm:shrink-0" role="group" aria-label={column.source_heading}>
                         {(["add", "ignore"] as const).map((d) => (
                           <button
                             key={d}
                             type="button"
                             aria-pressed={decision === d}
                             onClick={() => decide(d)}
-                            className={`rounded-full border px-4 py-2 text-[15px] transition ${
+                            className={`min-h-11 flex-1 rounded-full border px-4 py-2 text-[15px] transition sm:flex-none ${
                               decision === d
                                 ? d === "add"
                                   ? "border-accent bg-accent font-semibold text-accent-fg"
@@ -377,7 +377,7 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
             <button
               onClick={save}
               disabled={!canConfirm}
-              className="rounded-full bg-accent px-5 py-2.5 text-[15px] font-medium
+              className="w-full rounded-full bg-accent px-6 py-3 text-[17px] font-semibold sm:w-auto
                 text-accent-fg disabled:cursor-not-allowed disabled:bg-surface-2
                 disabled:text-muted"
             >
@@ -385,7 +385,7 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
             </button>
             <button
               onClick={() => setEditing((v) => !v)}
-              className="text-[15px] text-accent underline"
+              className="min-h-11 w-full rounded-full px-4 text-[16px] text-accent underline sm:w-auto"
             >
               {editing ? "Back to the summary" : "Edit columns"}
             </button>

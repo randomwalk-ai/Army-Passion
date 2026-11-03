@@ -75,7 +75,8 @@ export default function PreviewColumns({ preview, onUpdated }: Props) {
     <div className="mt-4 rounded-lg border border-border">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+        aria-expanded={open}
+        className="flex min-h-12 w-full items-center justify-between gap-3 px-3 py-2.5 text-left"
       >
         <span className="text-[15px] font-medium">
           {columns.length} columns will be imported
@@ -113,7 +114,7 @@ export default function PreviewColumns({ preview, onUpdated }: Props) {
                     }
                     disabled={busy}
                     title="Skip this column for this Excel only"
-                    className="ml-1 rounded-full border border-border px-2 text-xs
+                    className="ml-1 min-h-8 rounded-full border border-border px-2.5 text-[13px]
                       text-muted hover:border-text hover:text-text"
                   >
                     Don&rsquo;t import
@@ -147,14 +148,14 @@ export default function PreviewColumns({ preview, onUpdated }: Props) {
                 <button
                   onClick={addColumn}
                   disabled={!newKey || busy}
-                  className="rounded-full bg-accent px-4 py-2 text-[14px] font-medium
-                    text-accent-fg disabled:bg-surface-2 disabled:text-muted"
+                  className="min-h-11 flex-1 rounded-full bg-accent px-5 text-[16px] font-semibold
+                    text-accent-fg disabled:bg-surface-2 disabled:text-muted sm:flex-none"
                 >
                   Add
                 </button>
                 <button
                   onClick={() => setAdding(false)}
-                  className="text-[14px] text-muted underline"
+                  className="min-h-11 px-3 text-[16px] text-muted underline"
                 >
                   Cancel
                 </button>
@@ -163,7 +164,7 @@ export default function PreviewColumns({ preview, onUpdated }: Props) {
           ) : (
             <button
               onClick={() => setAdding(true)}
-              className="mt-3 text-[14px] text-accent underline"
+              className="mt-2 min-h-11 text-left text-[15px] text-accent underline"
             >
               + Add a column that isn&rsquo;t in the sheet
             </button>

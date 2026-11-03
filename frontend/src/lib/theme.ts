@@ -10,8 +10,11 @@ export type Theme = "light" | "dark";
 
 const KEY = "army-passion-theme";
 
+// The page background in each theme, also used for the phone's status bar.
+const BAR_COLOUR = { light: "#ffffff", dark: "#141413" };
+
 /** Inlined in <head>; must stay plain, self-contained JavaScript. */
-export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("${KEY}");if(t==="light"||t==="dark")document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
+export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("${KEY}");if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t);document.addEventListener("DOMContentLoaded",function(){document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute("content",t==="dark"?"${BAR_COLOUR.dark}":"${BAR_COLOUR.light}")})})}}catch(e){}})();`;
 
 /** What is showing right now: his choice, or else the computer's setting. */
 export function currentTheme(): Theme {
@@ -22,6 +25,10 @@ export function currentTheme(): Theme {
 
 export function setTheme(theme: Theme): void {
   document.documentElement.setAttribute("data-theme", theme);
+  // Phone browsers colour their top bar from this; keep it matching the page.
+  document
+    .querySelectorAll('meta[name="theme-color"]')
+    .forEach((meta) => meta.setAttribute("content", BAR_COLOUR[theme]));
   try {
     localStorage.setItem(KEY, theme);
   } catch {

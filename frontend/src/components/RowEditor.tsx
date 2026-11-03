@@ -66,8 +66,8 @@ export default function RowEditor({ importId, row, onUpdated, onClose }: Props) 
                   [field.field_key]: e.target.value,
                 }))
               }
-              className="mt-0.5 w-full rounded-md border border-border bg-bg px-2 py-1.5
-                text-[14px] outline-none focus:border-accent"
+              className="mt-0.5 w-full rounded-lg border border-border bg-bg px-3 py-2.5
+                text-[16px] outline-none focus:border-accent"
             />
           </label>
         ))}
@@ -79,7 +79,7 @@ export default function RowEditor({ importId, row, onUpdated, onClose }: Props) 
         <button
           onClick={save}
           disabled={saving}
-          className="rounded-full bg-accent px-4 py-1.5 text-[14px] font-medium
+          className="min-h-11 rounded-full bg-accent px-5 text-[16px] font-semibold
             text-accent-fg disabled:bg-surface-2 disabled:text-muted"
         >
           {saving ? "Saving..." : "Save"}
@@ -87,14 +87,14 @@ export default function RowEditor({ importId, row, onUpdated, onClose }: Props) 
         <button
           onClick={onClose}
           disabled={saving}
-          className="text-[14px] text-muted underline"
+          className="min-h-11 px-2 text-[16px] text-muted underline"
         >
           Cancel
         </button>
         <button
           onClick={() => send({ values: {}, skip: !row.skipped_by_user })}
           disabled={saving}
-          className="ml-auto text-[14px] text-warning underline"
+          className="min-h-11 text-[15px] text-warning underline sm:ml-auto"
         >
           {row.skipped_by_user ? "Put this row back" : "Leave this row out"}
         </button>

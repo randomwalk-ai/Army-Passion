@@ -11,6 +11,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Lets the page use the full screen on phones with a notch; the frame pads
+  // itself clear of it (see .pt-safe / .pb-safe in globals.css).
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#141413" },

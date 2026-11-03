@@ -99,6 +99,13 @@ function ClaimForm() {
       .catch((e) => setLoadError(errorText(e)));
   }, [familyId, year]);
 
+  // A success message steps aside on its own; a problem stays until he closes it.
+  useEffect(() => {
+    if (message?.tone !== "success") return;
+    const timer = setTimeout(() => setMessage(null), 8000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
   const missing = useMemo(() => (form ? stillEmpty(form) : []), [form]);
   const dirty = form !== null && JSON.stringify(form) !== saved;
   const total = form?.children.reduce((sum, c) => sum + (c.cea_amount || 0) + (c.hostel_amount || 0), 0) ?? 0;
@@ -221,7 +228,7 @@ function ClaimForm() {
 
       {/* ---------- the verdict ---------- */}
       <Card className="mb-6">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <CeaStatusBadge status={family.status} label={family.status_label} />
           <p className="text-[16px] text-muted">{family.reasons.join(" ")}</p>
         </div>
@@ -254,8 +261,8 @@ function ClaimForm() {
         <Card>
           <SectionTitle step={1} title="The soldier and next of kin" />
           <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Name of next of kin" prefilled {...text("nok_name")} />
-            <Field label="Soldier's name" prefilled {...text("soldier_name")} />
+            <Field label="Name of next of kin" prefilled autoCapitalize="words" {...text("nok_name")} />
+            <Field label="Soldier's name" prefilled autoCapitalize="words" {...text("soldier_name")} />
             <Field label="Rank" prefilled {...text("soldier_rank")} />
             <Field label="Army number" prefilled {...text("service_number")} />
             <Field label="Unit" prefilled className="sm:col-span-2" {...text("unit")} />
@@ -273,8 +280,8 @@ function ClaimForm() {
           ) : (
             <div className="space-y-4">
               {form.children.map((child, index) => (
-                <div key={child.member_id ?? index} className="rounded-2xl border border-border bg-bg p-4 sm:p-5">
-                  <p className="mb-4 text-[18px] font-semibold">
+                <div key={child.member_id ?? index} className="rounded-2xl border border-border bg-bg p-3.5 sm:p-5">
+                  <p className="mb-4 text-[18px] font-semibold leading-snug">
                     {index === 0 ? "1st child" : "2nd child"}: {child.name}
                   </p>
                   <div className="grid gap-5 sm:grid-cols-2">
@@ -345,7 +352,7 @@ function ClaimForm() {
             <Field label="Branch" prefilled {...text("bank_branch")} />
             <Field label="Bank address" {...text("bank_address")} />
             <Field label="Account number" inputMode="numeric" prefilled {...text("bank_account_number")} />
-            <Field label="IFSC code" prefilled {...text("bank_ifsc")} />
+            <Field label="IFSC code" prefilled autoCapitalize="characters" {...text("bank_ifsc")} />
           </div>
         </Card>
 
@@ -367,27 +374,31 @@ function ClaimForm() {
       </div>
 
       {/* ---------- always in reach ---------- */}
-      <div className="sticky bottom-0 -mx-4 mt-8 border-t border-border bg-bg/95 px-4 py-4 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border">
+      <div className="pb-safe sticky bottom-0 z-10 -mx-4 mt-8 border-t border-border bg-bg/95 px-4 pt-3 backdrop-blur sm:mx-0 sm:rounded-2xl sm:border sm:py-4">
         {message && (
-          <div className="mb-3">
-            <Notice tone={message.tone} title={message.title}>
+          <div className="mb-3 max-h-[35vh] overflow-y-auto">
+            <Notice tone={message.tone} title={message.title} onClose={() => setMessage(null)}>
               {message.body}
             </Notice>
           </div>
         )}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <p className="text-[17px] sm:mr-auto">
-            Total claim: <span className="text-2xl font-semibold tabular-nums">{rupees(total)}</span>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+          <p className="flex items-baseline justify-between gap-2 text-[16px] sm:mr-auto sm:block sm:text-[17px]">
+            Total claim{" "}
+            <span className="text-xl font-semibold tabular-nums sm:text-2xl">{rupees(total)}</span>
           </p>
-          <button onClick={onSave} disabled={busy !== null || !dirty} className={buttonSecondary}>
+          {/* Side by side even on a phone, so both stay in reach of the thumb. */}
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-3">
+          <button onClick={onSave} disabled={busy !== null || !dirty} className={`${buttonSecondary} px-3 sm:px-6`}>
             {busy === "saving" ? "Saving…" : dirty ? "Save changes" : "Saved"}
           </button>
-          <button onClick={onDownload} disabled={busy !== null} className={buttonPrimary}>
+          <button onClick={onDownload} disabled={busy !== null} className={`${buttonPrimary} px-3 sm:px-6`}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 4v12m0 0l-5-5m5 5l5-5M5 20h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            {busy === "downloading" ? "Preparing the PDF…" : "Download PDF"}
+            {busy === "downloading" ? "Preparing…" : "Download PDF"}
           </button>
+          </div>
         </div>
       </div>
     </>

@@ -30,7 +30,7 @@ export default function PromptBox({ onFiles, onSend }: Props) {
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 pb-5 pt-2">
+    <div className="pb-safe mx-auto w-full max-w-3xl px-4 pt-2">
       <div
         className="flex items-end gap-2 rounded-3xl border border-border bg-surface
           px-3 py-2.5 focus-within:border-accent"

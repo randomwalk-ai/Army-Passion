@@ -58,7 +58,7 @@ export default function Sidebar({ open, onClose, onNewChat }: Props) {
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-border bg-surface
+        className={`pt-safe fixed inset-y-0 left-0 z-40 flex w-[min(18rem,85vw)] flex-col border-r border-border bg-surface md:w-72
           transition-transform duration-200 md:static md:translate-x-0
           ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
@@ -80,7 +80,7 @@ export default function Sidebar({ open, onClose, onNewChat }: Props) {
           <button
             onClick={onClose}
             aria-label="Close menu"
-            className="rounded-lg p-1.5 text-muted hover:bg-surface-2 md:hidden"
+            className="-mr-2 flex h-11 w-11 items-center justify-center rounded-xl text-muted hover:bg-surface-2 md:hidden"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -161,7 +161,7 @@ export default function Sidebar({ open, onClose, onNewChat }: Props) {
           )}
         </div>
 
-        <div className="border-t border-border px-5 py-4">
+        <div className="pb-safe border-t border-border px-5 pt-3">
           <div className="-mx-2 mb-3">
             <ThemeSwitch />
           </div>

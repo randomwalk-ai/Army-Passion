@@ -24,11 +24,11 @@ export function PageHeader({
   back?: { href: string; label: string };
 }) {
   return (
-    <div className="mb-8">
+    <div className="mb-6 sm:mb-8">
       {back && (
         <Link
           href={back.href}
-          className="mb-4 inline-flex items-center gap-1.5 text-[16px] text-muted hover:text-text"
+          className="-ml-2 mb-3 inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-[16px] text-muted hover:bg-surface-2 hover:text-text sm:mb-4"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M15 6l-6 6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -36,8 +36,8 @@ export function PageHeader({
           {back.label}
         </Link>
       )}
-      <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>
-      {intro && <p className="mt-3 max-w-2xl text-lg leading-relaxed text-muted">{intro}</p>}
+      <h1 className="text-[28px] font-semibold leading-tight tracking-tight sm:text-4xl">{title}</h1>
+      {intro && <p className="mt-2 max-w-2xl text-[17px] leading-relaxed text-muted sm:mt-3 sm:text-lg">{intro}</p>}
     </div>
   );
 }
@@ -50,7 +50,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={`rounded-2xl border border-border bg-surface p-5 sm:p-6 ${className}`}>
+    <section className={`min-w-0 rounded-2xl border border-border bg-surface p-4 sm:p-6 ${className}`}>
       {children}
     </section>
   );
@@ -94,6 +94,8 @@ type FieldProps = {
   prefilled?: boolean;
   /** id of a <datalist> to suggest values from. */
   list?: string;
+  /** Phone keyboards: "words" for names, "characters" for codes like IFSC. */
+  autoCapitalize?: "off" | "sentences" | "words" | "characters";
 };
 
 /** "05062013" -> "05-06-2013". Lets him type a date with digits only. */
@@ -119,6 +121,7 @@ export function Field({
   className = "",
   prefilled,
   list,
+  autoCapitalize,
 }: FieldProps) {
   const id = useId();
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
@@ -129,7 +132,7 @@ export function Field({
 
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1.5 flex items-baseline gap-2 text-[16px] font-medium">
+      <label htmlFor={id} className="mb-1.5 flex flex-wrap items-baseline gap-x-2 text-[16px] font-medium">
         {label}
         {required && <span className="text-sm font-normal text-muted">(needed)</span>}
         {prefilled && value && (
@@ -154,6 +157,7 @@ export function Field({
           placeholder={placeholder ?? (date ? "DD-MM-YYYY" : undefined)}
           inputMode={date ? "numeric" : inputMode}
           autoComplete={autoComplete}
+          autoCapitalize={autoCapitalize ?? (date || inputMode ? "off" : undefined)}
           list={list}
           aria-invalid={Boolean(error)}
           aria-describedby={describedBy}
@@ -202,7 +206,7 @@ export function Choice<T extends string>({
               type="button"
               aria-pressed={selected}
               onClick={() => onChange(selected ? ("" as T) : option.value)}
-              className={`min-w-[5.5rem] rounded-xl border px-4 py-3 text-[17px] transition
+              className={`min-h-12 min-w-[5.5rem] flex-1 rounded-xl border px-4 py-2.5 text-[17px] transition sm:flex-none
                 ${
                   selected
                     ? "border-accent bg-accent-soft font-semibold text-text"
@@ -250,10 +254,13 @@ export function Notice({
   tone = "info",
   title,
   children,
+  onClose,
 }: {
   tone?: "info" | "success" | "warning" | "danger";
   title: string;
   children?: React.ReactNode;
+  /** Shows a close button. */
+  onClose?: () => void;
 }) {
   const styles = {
     info: "border-border bg-surface",
@@ -268,8 +275,22 @@ export function Notice({
     danger: "text-danger",
   }[tone];
   return (
-    <div role={tone === "danger" ? "alert" : "status"} className={`rounded-2xl border px-5 py-4 ${styles}`}>
-      <p className={`text-[17px] font-semibold ${titleColor}`}>{title}</p>
+    <div role={tone === "danger" ? "alert" : "status"} className={`rounded-2xl border px-4 py-3.5 sm:px-5 sm:py-4 ${styles}`}>
+      <div className="flex items-start gap-2">
+        <p className={`min-w-0 flex-1 text-[17px] font-semibold ${titleColor}`}>{title}</p>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close message"
+            className="-mr-2 -mt-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-muted hover:bg-surface-2 hover:text-text"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+        )}
+      </div>
       {children && <div className="mt-1 text-[16px] leading-relaxed text-muted">{children}</div>}
     </div>
   );

@@ -164,7 +164,7 @@ export default function NewFamilyPage() {
       )}
 
       {matches.length > 0 && (
-        <div className="mb-6 rounded-2xl border border-warning/60 bg-surface p-5">
+        <div className="mb-6 rounded-2xl border border-warning/60 bg-surface p-4 sm:p-5">
           <p className="text-[18px] font-semibold text-warning">Is this a family you already have?</p>
           <p className="mt-1 text-[16px] text-muted">
             This looks very like a family that is already in the system. Please check before saving.
@@ -205,7 +205,7 @@ export default function NewFamilyPage() {
         <Card>
           <SectionTitle step={1} title="The soldier" />
           <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Soldier's name" required placeholder="e.g. Rajesh Kumar" className="sm:col-span-2" {...field("soldier_name")} />
+            <Field label="Soldier's name" required autoCapitalize="words" placeholder="e.g. Rajesh Kumar" className="sm:col-span-2" {...field("soldier_name")} />
             <Field label="Rank" placeholder="e.g. Havildar" {...field("rank")} />
             <Field label="Army number" placeholder="e.g. 15123456K" {...field("service_number")} />
             <Field label="Unit" placeholder="e.g. 14 Jat" {...field("unit")} />
@@ -222,7 +222,7 @@ export default function NewFamilyPage() {
         <Card>
           <SectionTitle step={2} title="Next of kin" hint="Usually the widow — the person you will speak to." />
           <div className="grid gap-5 sm:grid-cols-2">
-            <Field label="Name" required placeholder="e.g. Sunita Devi" className="sm:col-span-2" {...field("widow_name")} />
+            <Field label="Name" required autoCapitalize="words" placeholder="e.g. Sunita Devi" className="sm:col-span-2" {...field("widow_name")} />
             <div className="sm:col-span-2">
               <Choice
                 label="Relationship to the soldier"
@@ -266,14 +266,14 @@ export default function NewFamilyPage() {
           <div className="space-y-4">
             {children.map((child, index) => (
               <div key={index} className="rounded-2xl border border-border bg-bg p-4 sm:p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="text-[17px] font-semibold">
+                <div className="mb-4 flex items-center justify-between gap-2">
+                  <p className="min-w-0 truncate text-[17px] font-semibold">
                     {child.name.trim() || `Child ${index + 1}`}
                   </p>
                   <button
                     type="button"
                     onClick={() => setChildren((prev) => prev.filter((_, i) => i !== index))}
-                    className="rounded-full px-3 py-1.5 text-[15px] text-muted hover:bg-surface-2 hover:text-danger"
+                    className="-mr-2 min-h-11 shrink-0 rounded-full px-3 text-[15px] text-muted hover:bg-surface-2 hover:text-danger"
                   >
                     Remove
                   </button>
@@ -281,6 +281,7 @@ export default function NewFamilyPage() {
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field
                     label="Name"
+                    autoCapitalize="words"
                     value={child.name}
                     onChange={(v) => setChild(index, { name: v })}
                     error={errors[`children.${index}.name`]}
@@ -339,7 +340,7 @@ export default function NewFamilyPage() {
             <button
               type="button"
               onClick={() => setChildren((prev) => [...prev, emptyChild()])}
-              className={buttonSecondary}
+              className={`${buttonSecondary} w-full sm:w-auto`}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -354,7 +355,7 @@ export default function NewFamilyPage() {
             type="button"
             onClick={() => setShowBank((v) => !v)}
             aria-expanded={showBank}
-            className="flex w-full items-center justify-between gap-3 text-left"
+            className="flex min-h-12 w-full items-center justify-between gap-3 text-left"
           >
             <span className="flex items-start gap-3">
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[15px] font-semibold text-accent">
@@ -370,20 +371,20 @@ export default function NewFamilyPage() {
           {showBank && (
             <div className="mt-5 grid gap-5 sm:grid-cols-2">
               <Field label="PPO number" {...field("ppo_number")} />
-              <Field label="Account holder's name" {...field("bank_account_holder")} />
+              <Field label="Account holder's name" autoCapitalize="words" {...field("bank_account_holder")} />
               <Field label="Bank name" placeholder="e.g. State Bank of India" {...field("bank_name")} />
               <Field label="Branch" {...field("bank_branch")} />
               <Field label="Account number" inputMode="numeric" {...field("bank_account_number")} />
-              <Field label="IFSC code" placeholder="e.g. SBIN0001234" {...field("bank_ifsc")} />
+              <Field label="IFSC code" autoCapitalize="characters" placeholder="e.g. SBIN0001234" {...field("bank_ifsc")} />
             </div>
           )}
         </Card>
 
-        <div className="sticky bottom-0 -mx-4 flex flex-col gap-3 border-t border-border bg-bg/95 px-4 py-4 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:rounded-2xl sm:border">
-          <button type="submit" disabled={saving} className={buttonPrimary}>
+        <div className="pb-safe sticky bottom-0 z-10 -mx-4 flex flex-col gap-2 border-t border-border bg-bg/95 px-4 pt-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:gap-3 sm:rounded-2xl sm:border sm:py-4">
+          <button type="submit" disabled={saving} className={`${buttonPrimary} w-full sm:w-auto`}>
             {saving ? "Saving…" : "Save family"}
           </button>
-          <p className="text-[15px] text-muted">You can change any of this later. Old values are always kept.</p>
+          <p className="hidden text-[15px] text-muted sm:block">You can change any of this later. Old values are always kept.</p>
         </div>
       </form>
     </AppShell>

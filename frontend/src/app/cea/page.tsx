@@ -18,7 +18,7 @@ const TABS: { status: CeaStatus; label: string; empty: string }[] = [
 function FamilyRow({ family, year }: { family: CeaFamily; year: string }) {
   const canFill = family.status === "eligible" || family.status === "needs_data";
   return (
-    <li className="flex flex-col gap-4 rounded-2xl border border-border bg-bg p-5 sm:flex-row sm:items-center">
+    <li className="flex flex-col gap-3 rounded-2xl border border-border bg-bg p-4 sm:flex-row sm:items-center sm:gap-4 sm:p-5">
       <div className="min-w-0 flex-1">
         <p className="text-[18px] font-semibold">{family.nok_name}</p>
         <p className="text-[15px] text-muted">
@@ -35,8 +35,7 @@ function FamilyRow({ family, year }: { family: CeaFamily; year: string }) {
             {family.children.map((c, i) => (
               <li
                 key={`${c.member_id}-${i}`}
-                className="rounded-xl bg-surface px-3 py-1.5 text-[15px]"
-                title={[...c.reasons, ...c.to_confirm].join(" ")}
+                className="max-w-full rounded-xl bg-surface px-3 py-1.5 text-[15px]"
               >
                 <span className="font-medium">{c.name}</span>
                 {c.age !== null && <span className="text-muted">, {c.age}</span>}
@@ -47,6 +46,25 @@ function FamilyRow({ family, year }: { family: CeaFamily; year: string }) {
         ) : (
           <p className="mt-2 text-[15px] text-muted">{family.reasons.join(" ")}</p>
         )}
+        {/* Tap to see why: hover tooltips do not exist on a phone. */}
+        {family.children.length > 0 && (
+          <details className="group mt-2">
+            <summary className="inline-flex min-h-10 cursor-pointer list-none items-center gap-1 text-[15px] text-accent [&::-webkit-details-marker]:hidden">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="transition group-open:rotate-90" aria-hidden="true">
+                <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              Why?
+            </summary>
+            <ul className="mt-1 space-y-1.5 text-[15px]">
+              {family.children.map((c, i) => (
+                <li key={`${c.member_id}-why-${i}`} className="rounded-lg bg-surface px-3 py-2">
+                  <span className="font-medium">{c.name}:</span>{" "}
+                  <span className="text-muted">{[...c.reasons, ...c.to_confirm].join(" ")}</span>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
         {family.status === "needs_data" && (
           <p className="mt-2 text-[15px] text-warning">
             {family.children.flatMap((c) => (c.status === "needs_data" ? c.reasons : []))[0] ??
@@ -54,7 +72,7 @@ function FamilyRow({ family, year }: { family: CeaFamily; year: string }) {
           </p>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-4 sm:flex-col sm:items-end">
+      <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 sm:flex-col sm:items-end">
         {family.amount > 0 && (
           <p className="text-[20px] font-semibold tabular-nums">{rupees(family.amount)}</p>
         )}
@@ -63,7 +81,7 @@ function FamilyRow({ family, year }: { family: CeaFamily; year: string }) {
             href={`/cea/${family.family_id}?year=${year}`}
             className={`${
               family.status === "eligible" ? "bg-accent text-accent-fg" : "border border-border bg-bg"
-            } inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-[16px] font-semibold transition hover:opacity-90`}
+            } inline-flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-full px-5 text-[16px] font-semibold transition hover:opacity-90 sm:min-h-11 sm:flex-none`}
           >
             {family.status === "eligible" ? "Fill claim form" : "Check details"}
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -141,13 +159,13 @@ export default function CeaPage() {
             ))}
           </select>
         </div>
-        <button onClick={() => setShowRules((v) => !v)} aria-expanded={showRules} className="text-left text-[16px] text-accent underline sm:pb-3">
+        <button onClick={() => setShowRules((v) => !v)} aria-expanded={showRules} className="min-h-11 self-start text-left text-[16px] text-accent underline sm:self-auto sm:pb-1">
           {showRules ? "Hide the rules" : "What are the rules?"}
         </button>
       </div>
 
       {showRules && data && (
-        <div className="mb-6 rounded-2xl border border-border bg-surface p-5">
+        <div className="mb-6 rounded-2xl border border-border bg-surface p-4 sm:p-5">
           <p className="text-[17px] font-semibold">What we check</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-[16px] text-muted">
             {data.rules_summary.map((r) => (
@@ -176,7 +194,7 @@ export default function CeaPage() {
       {data && (
         <>
           {/* ---------- summary ---------- */}
-          <div className="mb-6 rounded-2xl border border-accent bg-accent-soft px-5 py-4">
+          <div className="mb-5 rounded-2xl border border-accent bg-accent-soft px-4 py-3.5 sm:mb-6 sm:px-5 sm:py-4">
             <p className="text-[17px]">
               <span className="font-semibold">{data.counts.eligible} families</span> can claim for {data.academic_year}, worth about{" "}
               <span className="font-semibold">{rupees(claimTotal)}</span> in all.
@@ -188,14 +206,19 @@ export default function CeaPage() {
 
           {/* ---------- tabs and search ---------- */}
           <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div role="tablist" aria-label="Show families who" className="flex flex-wrap gap-2">
+            {/* On a phone the tabs are one row you can swipe sideways. */}
+            <div
+              role="tablist"
+              aria-label="Show families who"
+              className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0"
+            >
               {TABS.map((t) => (
                 <button
                   key={t.status}
                   role="tab"
                   aria-selected={tab === t.status}
                   onClick={() => setTab(t.status)}
-                  className={`rounded-full border px-4 py-2 text-[16px] transition ${
+                  className={`min-h-11 shrink-0 whitespace-nowrap rounded-full border px-4 text-[16px] transition ${
                     tab === t.status
                       ? "border-text bg-text font-semibold text-bg"
                       : "border-border bg-bg text-muted hover:bg-surface-2 hover:text-text"
@@ -211,7 +234,7 @@ export default function CeaPage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search a name, place or code"
               aria-label="Search families"
-              className="w-full rounded-full border border-border bg-bg px-5 py-2.5 text-[16px] outline-none focus:border-accent focus:ring-4 focus:ring-accent/15 lg:w-80"
+              className="min-h-12 w-full rounded-full border border-border bg-bg px-5 text-[16px] outline-none focus:border-accent focus:ring-4 focus:ring-accent/15 lg:w-80"
             />
           </div>
 

@@ -51,7 +51,20 @@ no `/voice` page; the working voice flow is still on `/assistant`.
 - Errors say what to do, next to the box they belong to.
 - Short choices are big buttons, not dropdowns.
 - Nothing is saved without a clear button press; success screens say what happened and what to do next.
-- Works on a phone (single column, sticky action bar at the bottom of forms).
+- **Phone first** — most use is on a phone:
+  - Design at 360px wide first; add `sm:` (640px+) for wider screens.
+  - Tap targets at least 44px tall (`min-h-11`); no tiny underlined links as the only way to act.
+  - Text boxes are 16px or more on phones, or iPhones zoom the page in
+    (enforced in `globals.css`).
+  - Nothing sideways-scrolls except deliberate swipe rows (`no-scrollbar`,
+    e.g. the CEA tabs). Long codes wrap (`overflow-wrap` on `body`).
+  - Sticky bottom bars use `pb-safe` so they clear the iPhone home bar; the
+    page frame has `scroll-pb-44` so a focused box is never hidden behind one.
+  - Full height uses `.app-height` (100vh with a 100dvh upgrade), not `h-dvh` alone.
+  - Nothing important lives only in a hover tooltip — use a tappable
+    "Why?" (`<details>`) instead.
+  - Names use `autoCapitalize="words"`, codes like IFSC `"characters"`;
+    numbers and dates open the number keypad (`inputMode`).
 
 ---
 
