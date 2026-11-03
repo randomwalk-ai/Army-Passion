@@ -74,10 +74,52 @@ class LocalStorage(Storage):
         return self._path(key).is_file()
 
 
+class S3Storage(Storage):
+    """Blob storage (DigitalOcean Spaces, or any S3-compatible store). NOT BUILT YET.
+
+    The settings it will need are already read from .env (S3_ENDPOINT_URL,
+    S3_BUCKET, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION). To finish it: add
+    boto3, then save = put_object, open = get_object, delete = delete_object,
+    exists = head_object, using the same "folder/uuid.ext" keys as LocalStorage
+    so files can be copied across unchanged.
+    """
+
+    def __init__(self) -> None:
+        missing = [
+            name
+            for name, value in (
+                ("S3_ENDPOINT_URL", settings.s3_endpoint_url),
+                ("S3_BUCKET", settings.s3_bucket),
+                ("S3_ACCESS_KEY", settings.s3_access_key),
+                ("S3_SECRET_KEY", settings.s3_secret_key),
+            )
+            if not value
+        ]
+        hint = f" Missing in .env: {', '.join(missing)}." if missing else ""
+        raise NotImplementedError(
+            "Blob storage is not connected yet." + hint
+            + " Use STORAGE_PROVIDER=local for now."
+        )
+
+    def save(self, data: BinaryIO, original_filename: str, folder: str) -> str:
+        raise NotImplementedError
+
+    def open(self, key: str) -> BinaryIO:
+        raise NotImplementedError
+
+    def delete(self, key: str) -> None:
+        raise NotImplementedError
+
+    def exists(self, key: str) -> bool:
+        raise NotImplementedError
+
+
 def get_storage() -> Storage:
     """Pick the backend named in the environment."""
     if settings.storage_provider == "local":
         return LocalStorage()
+    if settings.storage_provider == "s3":
+        return S3Storage()
     raise NotImplementedError(
         f"Storage provider '{settings.storage_provider}' is not built yet. "
         "Set STORAGE_PROVIDER=local in your .env."

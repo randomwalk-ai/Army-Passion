@@ -9,7 +9,8 @@ branch. Read this before changing any of them.
 
 | Page | File | What it does |
 |---|---|---|
-| `/` Home | `frontend/src/app/page.tsx` | Number tiles + the four main actions |
+| `/` Home | `frontend/src/app/page.tsx` | Number tiles, a small families table, the main actions |
+| `/families?filter=&family=` | `frontend/src/app/families/page.tsx` | The full families table (`family=ID` opens that family) |
 | `/upload` | `frontend/src/app/upload/page.tsx` | Excel import in 3 steps |
 | `/families/new` | `frontend/src/app/families/new/page.tsx` | Add one family by hand |
 | `/cea` | `frontend/src/app/cea/page.tsx` | Who can claim CEA, for a chosen year |
@@ -28,6 +29,10 @@ no `/voice` page; the working voice flow is still on `/assistant`.
   with label, hint, error; `date` adds DD-MM-YYYY dashes as you type),
   `Choice` (big buttons instead of dropdowns), `Checkbox`, `Notice`, `Spinner`,
   button styles, and `errorText()` for friendly "server not reachable" messages.
+- `components/FamilyTable.tsx` — the spreadsheet (see "The families table").
+- `components/SupportingDocuments.tsx` — `SupportingDocuments` (a saved
+  family's 1–4 files: list, view, add, remove) and `DocumentPicker` (files
+  picked before the family exists, used by Add a family).
 - `components/ThemeSwitch.tsx` + `lib/theme.ts` — a single **Dark mode** on/off
   switch at the bottom of the menu. Until it is pressed, the page follows the
   computer's setting; once pressed, the choice is set as `data-theme` on
@@ -77,7 +82,13 @@ no `/voice` page; the working voice flow is still on `/assistant`.
 | `GET /api/cea/eligibility?year=` | `app/api/cea.py` | Every non-draft family, sorted: can claim → details missing → later → cannot |
 | `GET /api/cea/families/{id}/form?year=` | `app/api/cea.py` | Pre-filled form + verdict + list of empty boxes |
 | `PUT /api/cea/families/{id}/form` | `app/api/cea.py` | Saves his edits back to the record (with history) |
-| `POST /api/cea/pdf` | `app/api/cea.py` | Body = the form; returns the filled PDF |
+| `POST /api/cea/pdf` | `app/api/cea.py` | Body = `{form, include_documents}`; returns the filled PDF (+ documents) |
+| `GET /api/families/table` | `app/api/families.py` + `app/services/family_table.py` | `q, filter, sort, descending, page, page_size` → columns, rows, filter counts |
+| `GET /api/families/{id}/row` | same | One family as a table row |
+| `PATCH /api/families/{id}/cell` | same | `{key, value}` → 422 with a plain reason if the value is wrong |
+| `GET /api/families/{id}/supporting-documents` | `app/api/documents.py` | `{minimum: 1, maximum: 4, documents}` |
+| `POST /api/families/{id}/supporting-documents` | same | multipart `file` + `doc_type` · 409 when 4 already |
+| `DELETE /api/families/{id}/supporting-documents/{doc}` | same | 409 if it is the last one |
 
 ### Dashboard tiles are a list on purpose
 
@@ -123,6 +134,60 @@ IFSC codes are stored identically. Rules:
 - History: a `__created__` row in `field_history` with source `officer_entry`,
   plus an `audit_log` row `family.create`.
 - Empty child rows on the form are ignored.
+
+---
+
+## Supporting documents (1 to 4 per family)
+
+- A `documents` row with `is_supporting = true` (migration `d4a9c1e8f2b6`).
+  These are separate from the older per-document records the seed creates
+  for the AI-extraction flow, so they never count towards the limit.
+- The limits live in `app/api/documents.py` (`MIN_SUPPORTING`, `MAX_SUPPORTING`).
+  The server enforces the maximum (409) and refuses to remove the last one
+  (409: "add the replacement first"). The minimum for a **new** family is
+  enforced by the Add-a-family form, which uploads the files right after the
+  family is created; families from Excel start with none and show up under
+  "No documents yet" (table filter and a Home tile).
+- PDF, JPG, PNG, WebP up to 20 MB. Files go through `get_storage()`.
+
+### Blob storage (not connected yet)
+
+`STORAGE_PROVIDER=local` (default) writes to `./storage`. `STORAGE_PROVIDER=s3`
+selects `S3Storage` in `app/services/storage.py`, a placeholder that reads
+`S3_ENDPOINT_URL`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION`
+and stops with a clear message saying it is not built. To finish it: add
+`boto3` and implement the four methods (`put_object`, `get_object`,
+`delete_object`, `head_object`) with the same `folder/uuid.ext` keys.
+
+### In the CEA PDF
+
+`app/services/document_pack.py` → `append_documents(pdf, attachments)`:
+PDFs are added page by page; photos are put on an A4 page (turned the right
+way up) with a small caption. A file that is missing or cannot be opened gets
+a page saying so, rather than failing the whole download.
+
+---
+
+## The families table
+
+`app/services/family_table.py` holds `COLUMNS`: for each column, where the
+value lives (`family`, `soldier`, `extra` for approved custom fields, or
+`computed` such as Documents and Children), the cleaner (the same
+`parse_phone`, `parse_date`, `parse_pincode`, `parse_ifsc`… as the import),
+and whether it is required. To add a column, add one line there — the screen
+builds itself from the list. Approved extra fields appear as columns
+automatically.
+
+Editing a cell: a blank box clears the value (allowed here because it is a
+deliberate act) unless the column is required; an unchanged value writes
+nothing; every change writes `field_history` (source `officer_entry`,
+reference "Families table") and an `audit_log` row `family.update`.
+
+On screen: Editing is **off** by default so the table can be read without
+accidental changes. Computer: click a box, Enter saves, Esc cancels, Tab
+saves and moves right. Phone: the table scrolls sideways with the name
+pinned; tapping a name opens the family panel (bottom sheet) where each value
+has a big **Change** button, plus the documents.
 
 ---
 
@@ -255,6 +320,11 @@ cd backend
 per-box errors, duplicates, missing phone), eligibility ordering, pre-fill,
 saving only what changed, blanks never wiping, bad values saving nothing, and
 the PDF page count.
+
+`test_supporting_and_table.py` covers: the 1–4 limits, file types, the blob
+storage placeholder, documents added after the form pages (PDF and photo),
+broken files leaving a note, the CEA PDF with documents, and the table
+(paging, filters, search, cleaning, history, refusals, unchanged values).
 
 ---
 

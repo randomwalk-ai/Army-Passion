@@ -36,6 +36,10 @@ ALLOWED_SUFFIXES = {
 }
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 
+# Every family keeps between one and four supporting documents.
+MIN_SUPPORTING = 1
+MAX_SUPPORTING = 4
+
 
 class MemberOut(BaseModel):
     member_id: int
@@ -88,6 +92,23 @@ def _out(document: Document, member_names: dict[int, str]) -> DocumentOut:
         uploaded_on=document.created_at.strftime("%d-%m-%Y") if document.created_at else None,
         has_file=has_file,
     )
+
+
+async def _read_upload(file: UploadFile) -> tuple[str, str, bytes]:
+    """The file's name, type and bytes, or a plain-words reason it can't be taken."""
+    filename = file.filename or "document"
+    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if suffix not in ALLOWED_SUFFIXES:
+        raise HTTPException(
+            status_code=400,
+            detail="I can take PDF files and photos (.pdf, .jpg, .jpeg, .png, .webp).",
+        )
+    contents = await file.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail="That file is empty.")
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="That file is larger than 20 MB.")
+    return filename, ALLOWED_SUFFIXES[suffix], contents
 
 
 def _family_or_404(session: Session, family_id: int) -> Family:
@@ -155,20 +176,7 @@ async def upload_document(
             status_code=400, detail="That person is not a member of this family."
         )
 
-    filename = file.filename or "document"
-    suffix = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    if suffix not in ALLOWED_SUFFIXES:
-        raise HTTPException(
-            status_code=400,
-            detail="I can take PDF files and photos (.pdf, .jpg, .jpeg, .png, .webp).",
-        )
-
-    contents = await file.read()
-    if not contents:
-        raise HTTPException(status_code=400, detail="That file is empty.")
-    if len(contents) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="That file is larger than 20 MB.")
-
+    filename, mime_type, contents = await _read_upload(file)
     storage_key = get_storage().save(
         io.BytesIO(contents), filename, folder=f"documents/{family_id}"
     )
@@ -181,7 +189,7 @@ async def upload_document(
         status=DocumentStatus.uploaded,
         storage_key=storage_key,
         original_filename=filename,
-        mime_type=ALLOWED_SUFFIXES[suffix],
+        mime_type=mime_type,
         size_bytes=len(contents),
     )
     session.add(document)
@@ -254,3 +262,125 @@ def delete_document(document_id: int, session: Session = Depends(get_session)) -
     session.delete(document)
     session.commit()
     return {"deleted": document_id}
+
+
+# --- supporting documents: the 1 to 4 files he attaches to a family -----------
+
+
+class SupportingDocumentsOut(BaseModel):
+    family_id: int
+    minimum: int
+    maximum: int
+    documents: list[DocumentOut]
+
+
+def supporting_documents(session: Session, family_id: int) -> list[Document]:
+    """Oldest first, so the order he added them is the order they print in."""
+    return list(
+        session.scalars(
+            select(Document)
+            .where(Document.family_id == family_id, Document.is_supporting.is_(True))
+            .order_by(Document.created_at, Document.id)
+        ).all()
+    )
+
+
+def _supporting_out(session: Session, family: Family) -> SupportingDocumentsOut:
+    names = {m.id: m.full_name for m in family.members}
+    return SupportingDocumentsOut(
+        family_id=family.id,
+        minimum=MIN_SUPPORTING,
+        maximum=MAX_SUPPORTING,
+        documents=[_out(d, names) for d in supporting_documents(session, family.id)],
+    )
+
+
+@router.get(
+    "/api/families/{family_id}/supporting-documents",
+    response_model=SupportingDocumentsOut,
+)
+def list_supporting(
+    family_id: int, session: Session = Depends(get_session)
+) -> SupportingDocumentsOut:
+    return _supporting_out(session, _family_or_404(session, family_id))
+
+
+@router.post(
+    "/api/families/{family_id}/supporting-documents",
+    response_model=SupportingDocumentsOut,
+)
+async def add_supporting(
+    family_id: int,
+    file: UploadFile,
+    doc_type: str = Form("other"),
+    session: Session = Depends(get_session),
+) -> SupportingDocumentsOut:
+    family = _family_or_404(session, family_id)
+    try:
+        kind = DocumentType(doc_type or "other")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Unknown document type '{doc_type}'.") from exc
+
+    if len(supporting_documents(session, family_id)) >= MAX_SUPPORTING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This family already has {MAX_SUPPORTING} documents, the most it can have. "
+            "Remove one first, then add the new one.",
+        )
+
+    filename, mime_type, contents = await _read_upload(file)
+    storage_key = get_storage().save(
+        io.BytesIO(contents), filename, folder=f"documents/{family_id}"
+    )
+    user = current_user(session)
+    document = Document(
+        family_id=family_id,
+        doc_type=kind,
+        status=DocumentStatus.uploaded,
+        is_supporting=True,
+        storage_key=storage_key,
+        original_filename=filename,
+        mime_type=mime_type,
+        size_bytes=len(contents),
+    )
+    session.add(document)
+    session.flush()
+    session.add(
+        AuditLog(
+            user_id=user.id if user else None,
+            action="document.upload",
+            entity_type="family",
+            entity_id=family_id,
+            occurred_at=datetime.now(IST),
+            details={
+                "document_id": document.id,
+                "doc_type": kind.value,
+                "filename": filename,
+                "supporting": True,
+            },
+        )
+    )
+    session.commit()
+    return _supporting_out(session, family)
+
+
+@router.delete(
+    "/api/families/{family_id}/supporting-documents/{document_id}",
+    response_model=SupportingDocumentsOut,
+)
+def remove_supporting(
+    family_id: int, document_id: int, session: Session = Depends(get_session)
+) -> SupportingDocumentsOut:
+    family = _family_or_404(session, family_id)
+    current = supporting_documents(session, family_id)
+    document = next((d for d in current if d.id == document_id), None)
+    if document is None:
+        raise HTTPException(status_code=404, detail="That document was not found.")
+    if len(current) <= MIN_SUPPORTING:
+        raise HTTPException(
+            status_code=409,
+            detail="A family needs at least one document. Add the replacement first, "
+            "then remove this one.",
+        )
+    delete_document(document_id, session)
+    return _supporting_out(session, family)

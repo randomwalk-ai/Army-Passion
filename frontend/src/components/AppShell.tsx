@@ -5,7 +5,14 @@
 import { useEffect, useState } from "react";
 import Sidebar from "@/components/Sidebar";
 
-export default function AppShell({ children }: { children: React.ReactNode }) {
+export default function AppShell({
+  children,
+  wide = false,
+}: {
+  children: React.ReactNode;
+  /** For the families table, which needs the whole width of a big screen. */
+  wide?: boolean;
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   // The Back key / Escape closes the menu on a phone.
@@ -40,7 +47,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* scroll-padding keeps a focused box clear of the sticky Save bars. */}
         <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain scroll-pb-44">
-          <div className="pb-safe mx-auto w-full max-w-5xl px-4 pt-5 sm:px-8 sm:pb-16 sm:pt-10">{children}</div>
+          <div className={`pb-safe mx-auto w-full ${wide ? "max-w-[100rem]" : "max-w-5xl"} px-4 pt-5 sm:px-8 sm:pb-16 sm:pt-10`}>{children}</div>
         </main>
       </div>
     </div>

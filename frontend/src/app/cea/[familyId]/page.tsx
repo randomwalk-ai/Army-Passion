@@ -6,6 +6,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import CeaStatusBadge from "@/components/CeaStatusBadge";
+import { SupportingDocuments } from "@/components/SupportingDocuments";
 import {
   Card,
   Checkbox,
@@ -88,6 +89,10 @@ function ClaimForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<"saving" | "downloading" | null>(null);
   const [message, setMessage] = useState<{ tone: "success" | "danger"; title: string; body?: string } | null>(null);
+  const [documentCount, setDocumentCount] = useState(0);
+  // Until he decides, documents go in whenever there are some.
+  const [attachChoice, setAttachChoice] = useState<boolean | null>(null);
+  const attach = documentCount > 0 && (attachChoice ?? true);
 
   useEffect(() => {
     getCeaForm(familyId, year)
@@ -180,7 +185,7 @@ function ClaimForm() {
     const ready = dirty ? await save() : form;
     if (ready) {
       try {
-        const blob = await downloadCeaPdf(ready);
+        const blob = await downloadCeaPdf(ready, attach);
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
@@ -191,7 +196,9 @@ function ClaimForm() {
         setTimeout(() => URL.revokeObjectURL(url), 10_000);
         setMessage({
           tone: "success",
-          title: "The claim form has been downloaded",
+          title: attach
+            ? `The claim form and ${documentCount} document${documentCount === 1 ? "" : "s"} have been downloaded`
+            : "The claim form has been downloaded",
           body: "Print it, get it signed by the next of kin and the school principal, and attach the cancelled cheque.",
         });
       } catch (e) {
@@ -371,6 +378,29 @@ function ClaimForm() {
             <Field label="Date on the form" date {...text("dated")} />
           </div>
         </Card>
+
+        <Card>
+          <SectionTitle
+            step={7}
+            title="Supporting documents"
+            hint="The family's documents (1 to 4). They can go at the end of the same PDF, so everything prints together."
+          />
+          <SupportingDocuments familyId={familyId} onChange={(docs) => setDocumentCount(docs.length)} />
+          <div className="mt-4">
+            {documentCount > 0 ? (
+              <Checkbox
+                label={`Add ${documentCount === 1 ? "this document" : `these ${documentCount} documents`} to the end of the PDF`}
+                hint="One file to print or send, with the claim form first."
+                checked={attach}
+                onChange={setAttachChoice}
+              />
+            ) : (
+              <p className="rounded-xl bg-surface-2 px-4 py-3 text-[15px] text-muted">
+                Add a document above to include it in the PDF.
+              </p>
+            )}
+          </div>
+        </Card>
       </div>
 
       {/* ---------- always in reach ---------- */}
@@ -396,7 +426,16 @@ function ClaimForm() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M12 4v12m0 0l-5-5m5 5l5-5M5 20h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            {busy === "downloading" ? "Preparing…" : "Download PDF"}
+            {busy === "downloading" ? (
+              "Preparing…"
+            ) : attach ? (
+              <>
+                <span className="sm:hidden">PDF + docs</span>
+                <span className="hidden sm:inline">Download PDF + documents</span>
+              </>
+            ) : (
+              "Download PDF"
+            )}
           </button>
           </div>
         </div>

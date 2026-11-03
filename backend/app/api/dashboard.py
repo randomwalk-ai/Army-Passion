@@ -14,7 +14,7 @@ from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_session
-from app.models import Application, DataQualityIssue, Family, FamilyMember
+from app.models import Application, DataQualityIssue, Document, Family, FamilyMember
 from app.models.enums import ApplicationStage, IssueStatus, Relation
 from app.services.cea import AcademicYear, ELIGIBLE, ensure_cea_scheme, evaluate_family
 
@@ -67,6 +67,15 @@ def dashboard(session: Session = Depends(get_session)) -> DashboardResponse:
         )
     ) or 0
 
+    no_documents = session.scalar(
+        select(func.count()).select_from(Family).where(
+            real,
+            ~select(Document.id)
+            .where(Document.family_id == Family.id, Document.is_supporting.is_(True))
+            .exists(),
+        )
+    ) or 0
+
     drafts = session.scalar(
         select(func.count()).select_from(Family).where(Family.is_draft.is_(True))
     ) or 0
@@ -109,6 +118,9 @@ def dashboard(session: Session = Depends(get_session)) -> DashboardResponse:
         Stat(key="attention", label="Families with missing details", value=attention,
              hint="Phone, dates, bank details and so on",
              tone="attention" if attention else "normal"),
+        Stat(key="no_documents", label="Families without documents", value=no_documents,
+             hint="Each family needs 1 to 4", href="/families?filter=no_documents",
+             tone="attention" if no_documents else "normal"),
         Stat(key="turning_18", label="Children turning 18 soon", value=turning_18,
              hint="In the next 3 months"),
     ]

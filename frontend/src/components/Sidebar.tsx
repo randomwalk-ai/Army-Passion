@@ -26,6 +26,7 @@ type NavItem = { href: string; label: string; icon: string; soon?: boolean };
 
 export const NAV: NavItem[] = [
   { href: "/", label: "Home", icon: "M4 11l8-7 8 7v8.5a.5.5 0 0 1-.5.5H15v-6H9v6H4.5a.5.5 0 0 1-.5-.5V11z" },
+  { href: "/families", label: "All families", icon: "M4 5h16v14H4zM4 10h16M4 14.5h16M10 10v9" },
   { href: "/upload", label: "Upload a sheet", icon: "M12 16V4m0 0L7 9m5-5l5 5M5 20h14" },
   { href: "/families/new", label: "Add a family", icon: "M12 5v14M5 12h14" },
   { href: "/cea", label: "CEA claims", icon: "M4 8l8-4 8 4-8 4-8-4zm3 2v5c0 1.5 2.5 3 5 3s5-1.5 5-3v-5" },
@@ -43,8 +44,11 @@ function Icon({ d }: { d: string }) {
 
 export default function Sidebar({ open, onClose, onNewChat }: Props) {
   const pathname = usePathname();
-  const isActive = (href: string) =>
-    href === "/" ? pathname === "/" : pathname.startsWith(href);
+  // The closest match wins, so "Add a family" and "All families" are not both lit.
+  const matches = (href: string) =>
+    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+  const current = NAV.filter((item) => matches(item.href)).sort((a, b) => b.href.length - a.href.length)[0];
+  const isActive = (href: string) => current?.href === href;
 
   return (
     <>

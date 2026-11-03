@@ -1,10 +1,11 @@
 "use client";
 
-/** Home: the numbers that matter, and the four things he can do. */
+/** Home: the numbers that matter, the families table, and the things he can do. */
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import FamilyTable from "@/components/FamilyTable";
 import { Notice, buttonSecondary, errorText } from "@/components/ui";
 import { getDashboard, type Stat } from "@/lib/api";
 import { CURRENT_USER } from "@/lib/currentUser";
@@ -158,6 +159,14 @@ export default function Home() {
             )}
           </>
         )}
+      </section>
+
+      {/* ---------- the data itself ---------- */}
+      <section aria-labelledby="families" className="mt-10 sm:mt-12">
+        <h2 id="families" className="mb-3 text-xl font-semibold">
+          Families
+        </h2>
+        <FamilyTable compact />
       </section>
 
       {/* ---------- what he can do ---------- */}

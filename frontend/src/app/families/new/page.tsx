@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { DocumentPicker, MIN_DOCUMENTS, type PickedDocument } from "@/components/SupportingDocuments";
 import {
   Card,
   Checkbox,
@@ -17,7 +18,13 @@ import {
   buttonSecondary,
   errorText,
 } from "@/components/ui";
-import { FormRejected, createFamily, type DuplicateMatch, type NewChild } from "@/lib/api";
+import {
+  FormRejected,
+  addSupportingDocument,
+  createFamily,
+  type DuplicateMatch,
+  type NewChild,
+} from "@/lib/api";
 
 const STATES = [
   "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat",
@@ -39,7 +46,14 @@ const emptyChild = (): NewChild => ({
   has_disability: false,
 });
 
-type Saved = { family_id: number; family_code: string; primary_contact_name: string; warnings: string[] };
+type Saved = {
+  family_id: number;
+  family_code: string;
+  primary_contact_name: string;
+  warnings: string[];
+  /** Documents that did not upload, in words. */
+  uploadFailures: string[];
+};
 
 export default function NewFamilyPage() {
   const [values, setValues] = useState<Record<string, string>>({ nok_relationship: "Wife" });
@@ -50,7 +64,11 @@ export default function NewFamilyPage() {
   const [matches, setMatches] = useState<DuplicateMatch[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<Saved | null>(null);
+  const [documents, setDocuments] = useState<PickedDocument[]>([]);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const top = useRef<HTMLDivElement>(null);
+  const documentsCard = useRef<HTMLDivElement>(null);
 
   const field = (key: string) => ({
     value: values[key] ?? "",
@@ -65,6 +83,11 @@ export default function NewFamilyPage() {
     setChildren((prev) => prev.map((c, i) => (i === index ? { ...c, ...change } : c)));
 
   async function save(confirmNotDuplicate = false) {
+    if (documents.length < MIN_DOCUMENTS) {
+      setDocumentsError("Please add at least one document, for example the death certificate or PPO.");
+      documentsCard.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     setSaving(true);
     setMessage(null);
     setMatches([]);
@@ -74,7 +97,17 @@ export default function NewFamilyPage() {
         children,
         confirm_not_duplicate: confirmNotDuplicate,
       });
-      setSaved(result);
+      // The family is saved; now its documents, one at a time.
+      const uploadFailures: string[] = [];
+      for (const [index, d] of documents.entries()) {
+        setProgress(`Uploading document ${index + 1} of ${documents.length}…`);
+        try {
+          await addSupportingDocument(result.family_id, d.file, d.docType);
+        } catch (e) {
+          uploadFailures.push(`${d.file.name}: ${errorText(e)}`);
+        }
+      }
+      setSaved({ ...result, uploadFailures });
       top.current?.scrollIntoView({ behavior: "smooth" });
     } catch (e) {
       if (e instanceof FormRejected) {
@@ -88,6 +121,7 @@ export default function NewFamilyPage() {
       top.current?.scrollIntoView({ behavior: "smooth" });
     } finally {
       setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -99,6 +133,8 @@ export default function NewFamilyPage() {
     setMatches([]);
     setSaved(null);
     setShowBank(false);
+    setDocuments([]);
+    setDocumentsError(null);
   }
 
   // ---------- after saving ----------
@@ -117,6 +153,16 @@ export default function NewFamilyPage() {
             {saved.primary_contact_name}&rsquo;s family is now in the system as{" "}
             <span className="font-semibold text-text">{saved.family_code}</span>.
           </p>
+          {saved.uploadFailures.length > 0 && (
+            <div className="mt-6 text-left">
+              <Notice tone="danger" title="Some documents did not upload">
+                {saved.uploadFailures.join(" ")}{" "}
+                <Link href={`/families?family=${saved.family_id}`} className="font-medium text-accent underline">
+                  Add them again
+                </Link>
+              </Notice>
+            </div>
+          )}
           {saved.warnings.length > 0 && (
             <div className="mt-6 text-left">
               <Notice tone="warning" title="Still to find out">
@@ -128,6 +174,9 @@ export default function NewFamilyPage() {
             <button onClick={startAgain} className={buttonPrimary}>
               Add another family
             </button>
+            <Link href={`/families?family=${saved.family_id}`} className={buttonSecondary}>
+              See this family
+            </Link>
             <Link href={`/cea/${saved.family_id}`} className={buttonSecondary}>
               Check CEA for this family
             </Link>
@@ -146,7 +195,7 @@ export default function NewFamilyPage() {
       <div ref={top} />
       <PageHeader
         title="Add a family"
-        intro="Fill in what you know. Only the soldier's name and the next of kin's name are needed — everything else can be added later."
+        intro="Fill in what you know. Only the soldier's name, the next of kin's name and one document are needed — everything else can be added later."
       />
 
       {message && matches.length === 0 && (
@@ -350,6 +399,24 @@ export default function NewFamilyPage() {
           </div>
         </Card>
 
+        <div ref={documentsCard}>
+          <Card className={documentsError ? "border-danger/60" : ""}>
+            <SectionTitle
+              step={5}
+              title="Documents"
+              hint="At least 1, up to 4. For example the death certificate, PPO, Aadhaar or bank passbook."
+            />
+            <DocumentPicker
+              value={documents}
+              onChange={(next) => {
+                setDocuments(next);
+                if (next.length >= MIN_DOCUMENTS) setDocumentsError(null);
+              }}
+              error={documentsError ?? undefined}
+            />
+          </Card>
+        </div>
+
         <Card>
           <button
             type="button"
@@ -359,7 +426,7 @@ export default function NewFamilyPage() {
           >
             <span className="flex items-start gap-3">
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[15px] font-semibold text-accent">
-                5
+                6
               </span>
               <span>
                 <span className="block text-xl font-semibold">Pension and bank</span>
@@ -382,7 +449,7 @@ export default function NewFamilyPage() {
 
         <div className="pb-safe sticky bottom-0 z-10 -mx-4 flex flex-col gap-2 border-t border-border bg-bg/95 px-4 pt-3 backdrop-blur sm:mx-0 sm:flex-row sm:items-center sm:gap-3 sm:rounded-2xl sm:border sm:py-4">
           <button type="submit" disabled={saving} className={`${buttonPrimary} w-full sm:w-auto`}>
-            {saving ? "Saving…" : "Save family"}
+            {saving ? progress ?? "Saving…" : "Save family"}
           </button>
           <p className="hidden text-[15px] text-muted sm:block">You can change any of this later. Old values are always kept.</p>
         </div>

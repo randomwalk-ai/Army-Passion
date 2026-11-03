@@ -11,8 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import current_user
+from app.api.documents import supporting_documents
 from app.db import get_session
 from app.models import Family
+from app.models.enums import DOCUMENT_TYPE_LABELS
 from app.services.cea import (
     AcademicYear,
     ELIGIBLE,
@@ -31,6 +33,8 @@ from app.services.cea_form import (
     render_pdf,
     save_form,
 )
+from app.services.document_pack import Attachment, append_documents
+from app.services.storage import get_storage
 
 router = APIRouter(prefix="/api/cea", tags=["cea"])
 
@@ -248,10 +252,17 @@ def save(
     return SaveResponse(changed=changed, form=body.form, missing=missing_fields(body.form))
 
 
+class PdfIn(SaveIn):
+    # Add the family's supporting documents after the form pages.
+    include_documents: bool = False
+
+
 @router.post("/pdf")
-def pdf(body: SaveIn) -> Response:
+def pdf(body: PdfIn, session: Session = Depends(get_session)) -> Response:
     """The filled claim pack, from exactly what is on his screen."""
     content = render_pdf(body.form)
+    if body.include_documents:
+        content = append_documents(content, _attachments(session, body.form.family_id))
     name = "".join(ch for ch in body.form.nok_name if ch.isalnum() or ch == " ").strip()
     filename = f"CEA {body.form.academic_year} - {name or 'claim'}.pdf"
     return Response(
@@ -259,3 +270,24 @@ def pdf(body: SaveIn) -> Response:
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+def _attachments(session: Session, family_id: int | None) -> list[Attachment]:
+    if not family_id:
+        return []
+    storage = get_storage()
+    out = []
+    for document in supporting_documents(session, family_id):
+        content = None
+        if document.storage_key and storage.exists(document.storage_key):
+            with storage.open(document.storage_key) as handle:
+                content = handle.read()
+        out.append(
+            Attachment(
+                label=DOCUMENT_TYPE_LABELS.get(document.doc_type.value, "Document"),
+                filename=document.original_filename or "document",
+                mime_type=document.mime_type or "application/pdf",
+                content=content,
+            )
+        )
+    return out

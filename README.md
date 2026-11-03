@@ -59,8 +59,17 @@ No real person, family, service number or bank account appears anywhere.
 - **Upload a sheet** (`/upload`): the Excel flow in three clear steps. Extra
   columns in his sheet get an "Add to database / Leave out" choice each, and
   the fields his sheet is missing are listed (they stay empty).
-- **Add a family** (`/families/new`): a simple form; only the two names are
-  needed. Uses the same cleaning rules as the Excel import, warns if the family
+- **All families** (`/families`, also on Home): the database as one table,
+  like his Excel sheet. Search, filter (e.g. "No documents yet"), sort by a
+  column. Switch on **Editing** to correct a value in place; it is checked the
+  same way as an import and the old value is kept in history. Tap a name to
+  see the whole family and its documents (works well on a phone).
+- **Supporting documents**: every family keeps **1 to 4** documents (PDF or
+  photo). Required when adding a family; managed from the family panel or
+  the CEA claim. Stored on local disk for now (`STORAGE_PROVIDER=local`); the
+  blob-storage settings (`S3_*` in `.env`) are placeholders until it is connected.
+- **Add a family** (`/families/new`): a simple form; only the two names and
+  one document are needed. Uses the same cleaning rules as the Excel import, warns if the family
   looks like one already in the system, and records the officer as the source.
 - **CEA claims** (`/cea`): every family checked against the Children Education
   Allowance rules for a chosen academic year (two eldest children, KG to 12, up
@@ -68,7 +77,9 @@ No real person, family, service number or bank account appears anywhere.
   live in `backend/app/data/cea_scheme.json`, not in code. Pick a family to get
   the claim form pre-filled; edits are saved back to the record (old values kept
   in history), and **Download PDF** writes the values onto the official scanned
-  form in `backend/CEA-Application/CEA 2026.pdf`.
+  form in `backend/CEA-Application/CEA 2026.pdf`. Tick **Add these documents
+  to the end of the PDF** to get the claim and the family's supporting
+  documents as one file.
 - **Voice notes**: shown as "coming soon" on the menu and Home. The voice-note
   flow still works by dropping a recording on the **Assistant** (`/assistant`).
 
@@ -82,8 +93,7 @@ No real person, family, service number or bank account appears anywhere.
 > (double-click it; no server needed). It shows the layers, the core loop,
 > wireframes of each screen, the data flows and the main tables.
 
-Not built yet: talking points, the families list and
-search screens, the map, applications tracking, philanthropist matching,
+Not built yet: talking points, the map, applications tracking, philanthropist matching,
 WhatsApp, login, and the real external services.
 
 ---

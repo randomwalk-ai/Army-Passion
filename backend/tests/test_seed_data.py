@@ -50,9 +50,16 @@ def test_every_family_has_a_soldier_and_a_widow(db):
 
 # --- schemes ------------------------------------------------------------------
 
+# The real CEA scheme is added by the app itself (from app/data/cea_scheme.json)
+# the first time CEA or the dashboard is opened. It is not mock data, and its
+# rules have their own shape, so these checks leave it out.
+def generated_schemes(db):
+    return db.scalars(select(Scheme).where(Scheme.code != "CEA")).all()
+
+
 
 def test_eight_to_ten_schemes_all_clearly_mock(db):
-    schemes = db.scalars(select(Scheme)).all()
+    schemes = generated_schemes(db)
     assert 8 <= len(schemes) <= 10
     for scheme in schemes:
         assert scheme.is_mock is True
@@ -65,7 +72,7 @@ def test_scheme_rules_are_stored_as_data(db):
     allowed_ops = {
         "eq", "neq", "gt", "gte", "lt", "lte", "in", "not_in", "is_true", "is_false",
     }
-    for scheme in db.scalars(select(Scheme)).all():
+    for scheme in generated_schemes(db):
         assert isinstance(scheme.rules, dict) and scheme.rules
         assert set(scheme.rules) <= {"all", "any"}
         for conditions in scheme.rules.values():

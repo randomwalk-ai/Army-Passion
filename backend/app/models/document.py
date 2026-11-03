@@ -36,6 +36,10 @@ class Document(Base, TimestampMixin):
         index=True,
     )
 
+    # One of the family's 1 to 4 supporting documents: the files he attaches
+    # himself, which can be added to the end of a printed claim (e.g. CEA).
+    is_supporting: Mapped[bool] = mapped_column(default=False, nullable=False)
+
     # Key in the storage interface (local disk now, S3-compatible later).
     storage_key: Mapped[str | None] = mapped_column(String(500))
     original_filename: Mapped[str | None] = mapped_column(String(300))

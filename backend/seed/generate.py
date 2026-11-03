@@ -656,6 +656,75 @@ def create_documents(session: Session, families: list[Family], officers: list[Us
     return count
 
 
+SUPPORTING_TYPES = [
+    DocumentType.death_certificate,
+    DocumentType.pension_payment_order,
+    DocumentType.aadhaar,
+    DocumentType.bank_passbook,
+    DocumentType.service_booklet,
+]
+
+
+def _mock_pdf(title: str, family: Family) -> bytes:
+    """A one-page placeholder, clearly marked as fake."""
+    import io
+
+    from reportlab.pdfgen import canvas as rl_canvas
+
+    buffer = io.BytesIO()
+    canvas = rl_canvas.Canvas(buffer, pagesize=(595.276, 841.89))
+    canvas.setFont("Helvetica-Bold", 40)
+    canvas.setFillGray(0.85)
+    canvas.drawCentredString(297, 420, "MOCK DOCUMENT")
+    canvas.setFillGray(0)
+    canvas.setFont("Helvetica-Bold", 20)
+    canvas.drawString(60, 760, title)
+    canvas.setFont("Helvetica", 13)
+    canvas.drawString(60, 730, f"Family: {family.primary_contact_name} ({family.family_code})")
+    canvas.drawString(60, 710, "Generated test data. Not a real document.")
+    canvas.save()
+    return buffer.getvalue()
+
+
+def create_supporting_documents(session: Session, families: list[Family]) -> int:
+    """Real (fake) files for about two thirds of families, so the screens and
+    the CEA "attach documents" option have something to show. The rest have
+    none, and show up under "No documents yet".
+
+    Uses its own random generator so the rest of the mock data stays the same.
+    """
+    import io
+
+    from app.services.storage import get_storage
+
+    local_rng = random.Random(4242)
+    storage = get_storage()
+    count = 0
+    for family in families:
+        if family.is_draft or local_rng.random() > 0.65:
+            continue
+        for doc_type in local_rng.sample(SUPPORTING_TYPES, k=local_rng.randint(1, 3)):
+            title = doc_type.value.replace("_", " ").title()
+            content = _mock_pdf(title, family)
+            filename = f"{doc_type.value}.pdf"
+            key = storage.save(io.BytesIO(content), filename, folder=f"documents/{family.id}")
+            session.add(
+                Document(
+                    family_id=family.id,
+                    doc_type=doc_type,
+                    status=DocumentStatus.uploaded,
+                    is_supporting=True,
+                    storage_key=key,
+                    original_filename=filename,
+                    mime_type="application/pdf",
+                    size_bytes=len(content),
+                )
+            )
+            count += 1
+    session.flush()
+    return count
+
+
 def create_applications(
     session: Session, families: list[Family], schemes: list[Scheme], users: dict
 ) -> tuple[int, int]:
@@ -1255,6 +1324,11 @@ def main() -> None:
         print("Writing field history and audit log...")
         history, audit = create_history(session, families, users)
 
+        print("Creating supporting documents (mock PDF files)...")
+        supporting = create_supporting_documents(
+            session, session.query(Family).order_by(Family.id).all()
+        )
+
         session.commit()
 
         print("\n--- Done. What is now in the database ---")
@@ -1265,7 +1339,7 @@ def main() -> None:
         print(f"  Family members            {session.query(FamilyMember).count()}")
         print(f"    turning 18 in 3 months  {turning_18}")
         print(f"  Postings                  {session.query(Posting).count()}")
-        print(f"  Documents                 {documents}")
+        print(f"  Documents                 {documents}  (+{supporting} supporting files)")
         print(f"  Applications              {applications}  ({stuck} stuck too long)")
         print(f"  Interactions              {interactions}")
         print(f"  Philanthropists           {donors}  ({matches} proposed matches)")

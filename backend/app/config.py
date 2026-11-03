@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     storage_provider: str = "local"
 
     local_storage_path: str = "./storage"
+    # Placeholders for the blob storage (DigitalOcean Spaces / any S3-compatible
+    # store). Not connected yet: STORAGE_PROVIDER=s3 explains what is missing.
+    s3_endpoint_url: str = ""
+    s3_bucket: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "blr1"
 
     # Used when llm_provider is not "mock".
     llm_api_key: str = ""

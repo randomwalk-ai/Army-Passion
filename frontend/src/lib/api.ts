@@ -305,6 +305,113 @@ export function documentFileUrl(documentId: number): string {
   return `${API_BASE}/api/documents/${documentId}/file`;
 }
 
+// --- supporting documents: 1 to 4 per family -----------------------------
+
+export type SupportingDocuments = {
+  family_id: number;
+  minimum: number;
+  maximum: number;
+  documents: DocumentItem[];
+};
+
+export async function listSupportingDocuments(familyId: number): Promise<SupportingDocuments> {
+  const response = await fetch(`${API_BASE}/api/families/${familyId}/supporting-documents`);
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+export async function addSupportingDocument(
+  familyId: number,
+  file: File,
+  docType = "other",
+): Promise<SupportingDocuments> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("doc_type", docType);
+  const response = await fetch(`${API_BASE}/api/families/${familyId}/supporting-documents`, {
+    method: "POST",
+    body: form,
+  });
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+export async function removeSupportingDocument(
+  familyId: number,
+  documentId: number,
+): Promise<SupportingDocuments> {
+  const response = await fetch(
+    `${API_BASE}/api/families/${familyId}/supporting-documents/${documentId}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+// --- the families table ----------------------------------------------------
+
+export type TableColumn = {
+  key: string;
+  label: string;
+  kind: "text" | "phone" | "date" | "number" | "choice";
+  editable: boolean;
+  sortable: boolean;
+  required: boolean;
+  choices: string[];
+};
+
+export type TableRow = { family_id: number; values: Record<string, string | number | null> };
+
+export type FamiliesTable = {
+  columns: TableColumn[];
+  rows: TableRow[];
+  filters: { key: string; label: string; count: number }[];
+  total: number;
+  page: number;
+  page_size: number;
+};
+
+export async function getFamiliesTable(params: {
+  q?: string;
+  filter?: string;
+  sort?: string;
+  descending?: boolean;
+  page?: number;
+  pageSize?: number;
+}): Promise<FamiliesTable> {
+  const query = new URLSearchParams({
+    q: params.q ?? "",
+    filter: params.filter ?? "all",
+    sort: params.sort ?? "primary_contact_name",
+    descending: String(params.descending ?? false),
+    page: String(params.page ?? 1),
+    page_size: String(params.pageSize ?? 25),
+  });
+  const response = await fetch(`${API_BASE}/api/families/table?${query}`);
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+export async function getFamilyRow(familyId: number): Promise<TableRow> {
+  const response = await fetch(`${API_BASE}/api/families/${familyId}/row`);
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+export async function editFamilyCell(
+  familyId: number,
+  key: string,
+  value: string,
+): Promise<{ changed: boolean; row: TableRow }> {
+  const response = await fetch(`${API_BASE}/api/families/${familyId}/cell`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, value }),
+  });
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
 // --- voice notes --------------------------------------------------------
 
 export type FamilySearchItem = {
@@ -628,11 +735,11 @@ export async function saveCeaForm(
   return response.json();
 }
 
-export async function downloadCeaPdf(form: CeaForm): Promise<Blob> {
+export async function downloadCeaPdf(form: CeaForm, includeDocuments = false): Promise<Blob> {
   const response = await fetch(`${API_BASE}/api/cea/pdf`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ form }),
+    body: JSON.stringify({ form, include_documents: includeDocuments }),
   });
   if (!response.ok) throw new Error(await failureMessage(response));
   return response.blob();
