@@ -189,6 +189,22 @@ a { color: var(--accent); }
 .modal label { display: block; margin-top: 10px; font-size: 13px; color: var(--muted); }
 .modal label .field { margin-top: 2px; color: var(--text); font-size: 15px; }
 
+.col-grid { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.col-item { display: flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--bg); border-radius: 10px; padding: 6px 6px 6px 12px; }
+.col-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.tag-new { font-size: 10px; color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 1px 5px; text-transform: uppercase; letter-spacing: .04em; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: -4px 0 8px; }
+.tab { padding: 10px 16px; font-weight: 500; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab span { font-size: 12px; font-weight: 400; background: var(--surface-2); border-radius: 999px; padding: 1px 8px; margin-left: 4px; }
+.tab:hover { color: var(--text); }
+.tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+.tab.on span { background: var(--accent-soft); color: var(--accent); }
+.up-row .tags { align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: var(--bg); }
+.seg button { padding: 3px 12px; font-size: 13px; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: var(--accent); color: var(--accent-fg); }
+.fgrid label .warn { display: block; margin-top: 2px; }
 .cea-row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
 .cea-row .who { flex: 1 1 220px; min-width: 0; }
 .cea-row .who b { display: block; font-weight: 500; }
@@ -288,8 +304,7 @@ a { color: var(--accent); }
       <div class="composer-inner">
         <div class="attach-menu" id="attach-menu" hidden>
           <p>Sample files (made up)</p>
-          <button type="button" data-act="drop-excel" data-variant="standard"><b>widows_sheet_sample.xlsx</b><small>42 columns · 63 rows</small></button>
-          <button type="button" data-act="drop-excel" data-variant="extra"><b>widows_sheet_with_extra_columns.xlsx</b><small>3 new columns · 30 rows</small></button>          <button type="button" data-act="cea-upload"><b>CEA 2026.pdf</b><small>A form to fill</small></button>
+          <button type="button" data-act="drop-excel" data-variant="extra"><b>widows_sheet_with_extra_columns.xlsx</b><small>4 new columns · 30 rows</small></button>
         </div>
         <div class="prompt">
           <button type="button" class="icon-btn" data-act="toggle-attach" aria-label="Attach an Excel sheet, voice note or document" title="Attach a file">
@@ -461,8 +476,8 @@ a { color: var(--accent); }
     for (let i = 0; i < plan.create; i++) {
       const v = person();
       const problems = [];
-      if (!v.phone) problems.push("No phone number");
-      if (i === 4) { v.phone = ""; problems.push("Phone '98765 4321' is too short"); }
+      if (i === 4) v.phone = "98765 4321";
+      if (i === 9) v.date_of_death = "31-02-2020";
       const near = rand() < 0.15 ? families[Math.floor(rand() * families.length)] : null;
       add({ action: "create", values: v, changes: [], problems, code: near?.code, score: near ? 30 : 0, reasons: near ? ["Widow's name is the same"] : [] });
     }
@@ -491,35 +506,44 @@ a { color: var(--accent); }
   const rowOf = (e, rid) => e.rows.find((r) => r.id === rid);
 
   // ---------- helpers for an Excel upload ----------
-  // The second sample says just "UNIT", which could be Serving unit or Parent unit, so he is asked.
-  function headingsOf(e) {
-    if (e.variant !== "extra") return HEADINGS;
-    return [...HEADINGS.map(([h, k]) => h === "SERVING UNIT" ? ["UNIT", "?unit"] : [h, k]), ...EXTRA_HEADINGS];
+  // The second sample has "UNIT" and three headings we have no column for; they come in as new columns.
+  function headingsOf(variant) {
+    if (variant !== "extra") return HEADINGS;
+    return [...HEADINGS.map(([h, k]) => h === "SERVING UNIT" ? ["UNIT", "extra:unit"] : [h, k]), ...EXTRA_HEADINGS];
   }
-  function activeColumns(e) {
-    const cols = [], seen = new Set();
-    for (const [h] of headingsOf(e)) {
-      const key = e.mapping[h];
-      if (!key || seen.has(key) || e.removed.has(h) || S.alwaysOff.has(key)) continue;
-      seen.add(key);
-      cols.push({ key, heading: h, added: false });
-    }
-    for (const [key, val] of Object.entries(e.added)) cols.push({ key, heading: null, added: true, value: val });
-    return cols;
-  }
-  function rowValue(e, row, key) {
-    if (row.values[key] !== undefined && row.values[key] !== "") return row.values[key];
-    if (key in e.added) return e.added[key];
-    return "";
-  }
+  const colName = (c) => S.renamed[c.key] ?? c.heading ?? label(c.key, S.extras);
+  const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const PHONE_KEYS = new Set(["phone", "alternate_phone", "co_unit_phone"]);
+  const isDateKey = (k) => k === "date_of_death" || /_dob$/.test(k);
+  const phoneDigits = (v) => v.replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
+  const cleanPhone = (v) => "+91" + phoneDigits(v);
   const display = (key, v) => (key.endsWith("_sex") && v) ? (v === "male" ? "male" : "female") : v;
-  const phoneOk = (v) => /^(\+?91)?[6-9]\d{9}$/.test(v.replace(/[\s-]/g, ""));
-  const cleanPhone = (v) => "+91" + v.replace(/[\s-]/g, "").replace(/^\+?91(?=\d{10}$)/, "");
   function dateOk(v) {
     const m = v.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/); if (!m) return false;
     const d = new Date(+m[3], +m[2] - 1, +m[1]);
     return d.getDate() === +m[1] && d.getMonth() === +m[2] - 1 && d <= new Date(2026, 10, 30);
   }
+  // Only clear-cut mistakes: a phone that isn't 10 digits, a date that doesn't exist.
+  function rowProblems(e, r) {
+    const out = [];
+    for (const c of e.cols) {
+      const v = String(r.values[c.key] || "").trim();
+      if (!v) continue;
+      if (PHONE_KEYS.has(c.key) && phoneDigits(v).length !== 10) out.push({ key: c.key, text: `${colName(c)} has ${phoneDigits(v).length} digits` });
+      if (isDateKey(c.key) && !dateOk(v)) out.push({ key: c.key, text: `${colName(c)} '${v}' isn't a real date` });
+    }
+    return out;
+  }
+  // New families, updates, duplicates. Rows with nothing new are not shown at all.
+  function groupOf(r) {
+    if (r.action === "update") return "update";
+    if (r.action === "needs" || r.action === "dup") return "dup";
+    if (r.action === "create") return "new";
+    return null;
+  }
+  const liveRows = (e) => e.rows.filter((r) => !r.deleted);
+  // A duplicate is imported only if he clicks Include.
+  const willImport = (r) => groupOf(r) === "new" || groupOf(r) === "update" || (groupOf(r) === "dup" && r.included);
 
   // ---------- rendering ----------
   const icons = {
@@ -540,8 +564,7 @@ a { color: var(--accent); }
       <h1>Good to see you, Colonel</h1>
       <p>What would you like to do?</p>
       <div class="cards">
-        <button type="button" class="card-btn" data-act="drop-excel" data-variant="standard"><b>Upload Excel</b><span>63 families, 42 columns</span></button>
-        <button type="button" class="card-btn" data-act="drop-excel" data-variant="extra"><b>Upload Excel with new columns</b><span>3 new columns, 1 unclear</span></button>        <button type="button" class="card-btn" data-act="cea-choose"><b>Fill a form</b><span>CEA — see who qualifies, fill and download</span></button>
+        <button type="button" class="card-btn" data-act="drop-excel" data-variant="extra"><b>Upload Excel</b><span>Sample sheet with 4 new columns</span></button>        <button type="button" class="card-btn" data-act="cea-choose"><b>Fill a form</b><span>CEA — see who qualifies, fill and download</span></button>
       </div>
     </div>`;
   }
@@ -554,187 +577,136 @@ a { color: var(--accent); }
     return chip + renderExcel(e);
   }
 
-  // ----- Excel: the sheet card -----
+  // ----- Excel upload: step 1 columns, step 2 rows -----
   function renderExcel(e) {
     if (e.stage === "reading") return `<p class="muted">Reading the sheet...</p>`;
-    if (e.stage === "mapping") return renderMapping(e);
+    if (e.stage === "columns") return renderColumnsStep(e);
     if (e.stage === "done") return renderResult(e);
-    return renderPreview(e);
+    return renderRowsStep(e);
   }
 
-  // Shows his columns as he wrote them. Only asks when a heading could mean two things.
-  function renderMapping(e) {
-    const hs = headingsOf(e);
-    const rowsN = e.variant === "extra" ? 30 : 63;
-    let anyOff = false, anyNew = false;
-    const chips = hs.map(([h]) => {
-      const key = e.mapping[h];
-      if (e.ask[h]) return `<li class="chip plain">${esc(h)}</li>`;
-      if (e.proposed[h]) { anyNew = true; return `<li class="chip new"><span>${esc(h)}</span><b>New</b></li>`; }
-      if (!key || S.alwaysOff.has(key)) { anyOff = true; return `<li class="chip off">${esc(h)}</li>`; }
-      return `<li class="chip plain">${esc(h)}</li>`;
-    }).join("");
-    const allLabels = [...Object.keys(FIELDS), ...Object.keys(S.extras)].map((k) => `<option value="${esc(label(k, S.extras))}"></option>`).join("");
-    const asks = Object.entries(e.ask).map(([h, opts], i) => {
-      const custom = e.proposed[h] ? `New column: ${e.proposed[h]}` : (e.mapping[h] && !opts.includes(e.mapping[h]) ? label(e.mapping[h], S.extras) : "");
-      return `<div class="confirm" style="border-color:var(--accent);margin-top:16px">
-      <span><b>${esc(h)}</b> — which one?</span>
-      ${opts.map((k) => `<button type="button" class="${e.mapping[h] === k ? "btn sm" : "btn-ghost"}" data-act="answer" data-id="${e.id}" data-h="${esc(h)}" data-key="${k}">${esc(label(k, S.extras))}</button>`).join("")}
-      <button type="button" class="${custom ? "btn sm" : "btn-ghost"}" data-act="ask-other" data-id="${e.id}" data-h="${esc(h)}">${custom ? esc(custom) : "Other…"}</button>
-      ${e.askOther[h] ? `<span style="display:flex;gap:8px;flex:1 1 260px">
-        <input class="field" list="cols-${e.id}" id="other-${e.id}-${i}" placeholder="Type a column name" aria-label="Column for ${esc(h)}">
-        <button type="button" class="btn sm" data-act="use-other" data-id="${e.id}" data-h="${esc(h)}" data-i="${i}">Use</button></span>` : ""}
-    </div>`;
-    }).join("") + (Object.keys(e.ask).length ? `<datalist id="cols-${e.id}">${allLabels}</datalist>` : "");
-    const legend = [anyOff ? "Grey = not imported" : "", anyNew ? "New = will be added" : ""].filter(Boolean).join(" · ");
+  // Two tabs at the top of the upload: Columns and Rows.
+  const uploadTabs = (e, on) => `<div class="tabs" role="tablist">
+    <button type="button" role="tab" aria-selected="${on === "columns"}" class="tab ${on === "columns" ? "on" : ""}" data-act="up-back" data-id="${e.id}">Columns <span>${e.cols.length}</span></button>
+    <button type="button" role="tab" aria-selected="${on === "rows"}" class="tab ${on === "rows" ? "on" : ""}" data-act="up-continue" data-id="${e.id}">Rows <span>${liveRows(e).filter((r) => groupOf(r)).length}</span></button>
+  </div>`;
 
+  function renderColumnsStep(e) {
     return `<div class="panel">
-      <h2>Your sheet</h2>
-      <p class="lede">${rowsN} rows · ${hs.length} columns</p>
-      ${asks}
-      <ul class="chips" style="margin-top:16px">${chips}</ul>
-      ${legend ? `<p class="muted small" style="margin:12px 0 0">${legend}</p>` : ""}
-      ${e.mapError ? `<p class="danger" style="margin-top:12px">${esc(e.mapError)}</p>` : ""}
-      <div class="actions">
-        <button type="button" class="btn" data-act="confirm-map" data-id="${e.id}">Continue</button>
-      </div>
+      ${uploadTabs(e, "columns")}
+      <ul class="col-grid">${e.cols.map((c) => `<li class="col-item">
+        <span class="col-name">${esc(colName(c))}${c.isNew ? ` <b class="tag-new">New</b>` : ""}</span>
+        <button type="button" class="icon-sq" data-act="up-rename" data-id="${e.id}" data-key="${esc(c.key)}" title="Rename" aria-label="Rename ${esc(colName(c))}">${ceaIcons.pencil}</button>
+        ${isRequired(c.key) ? "" : `<button type="button" class="icon-sq del" data-act="up-delcol" data-id="${e.id}" data-key="${esc(c.key)}" title="Delete" aria-label="Delete ${esc(colName(c))}">${ceaIcons.trash}</button>`}
+      </li>`).join("")}</ul>
+      <p style="margin:12px 0 0"><button type="button" class="link" data-act="up-addcol" data-id="${e.id}">+ Add column</button></p>
+      <div class="actions"><button type="button" class="btn" data-act="up-continue" data-id="${e.id}">Next</button></div>
+      ${renderUploadModal(e)}
     </div>`;
   }
 
-  // ----- Excel: the preview -----
-  const GROUPS = [
-    ["create", "New"], ["update", "Updates"], ["needs", "Check these"], ["excluded", "Left out"],
-  ];
+  const UP_GROUPS = [["new", "New families"], ["update", "Updates"], ["dup", "Duplicates"]];
 
-  // Repeated rows go under "Check these"; unchanged rows are only counted.
-  function renderPreview(e) {
-    const groupOf = (r) => r.excluded ? "excluded" : (r.action === "dup" ? "needs" : r.action);
-    const live = e.rows.filter((r) => !r.excluded);
-    const willWrite = live.filter((r) => ["create", "update", "needs"].includes(r.action)).length;
-    const unchanged = live.filter((r) => r.action === "unchanged").length;
-
-    const groups = GROUPS.map(([g, title]) => {
-      const rows = e.rows.filter((r) => groupOf(r) === g);
-      if (!rows.length) return "";
-      const open = e.open[g] ?? g === "needs";
-      return `<button type="button" class="group-head" data-act="toggle-group" data-id="${e.id}" data-g="${g}"><span>${title} (${rows.length})</span><span class="tiny">${open ? "hide" : "show"}</span></button>
-        ${open ? `<ul class="list">${rows.map((r) => renderRow(e, r)).join("")}</ul>` : ""}`;
+  function renderRowsStep(e) {
+    const rows = liveRows(e);
+    const toImport = rows.filter(willImport).length;
+    const groups = UP_GROUPS.map(([g, title]) => {
+      const list = rows.filter((r) => groupOf(r) === g);
+      if (!list.length) return "";
+      const open = e.open[g] ?? g === "dup";
+      return `<button type="button" class="group-head" data-act="toggle-group" data-id="${e.id}" data-g="${g}"><span>${title} (${list.length})</span><span class="tiny">${open ? "hide" : "show"}</span></button>
+        ${open ? `<ul class="list">${list.map((r) => renderUpRow(e, r)).join("")}</ul>` : ""}`;
     }).join("");
-
     return `<div class="panel">
-      <h2>Check before importing</h2>
-      ${renderColumns(e)}
+      ${uploadTabs(e, "rows")}
       ${groups}
-      ${unchanged ? `<p class="muted small" style="margin:12px 0 0">${unchanged} families are already saved with the same details — nothing to change.
-        <button type="button" class="link muted-link" data-act="toggle" data-id="${e.id}" data-key="showSame">${e.showSame ? "hide" : "show"}</button></p>
-        ${e.showSame ? `<ul class="list">${live.filter((r) => r.action === "unchanged").map((r) => `<li><div class="row-line"><span class="rownum">Row ${r.rowNum}</span>
-          <span class="who"><b>${esc(r.values.widow_name)}</b><small>${esc(r.values.district)} · ${esc(r.code)}</small></span></div></li>`).join("")}</ul>` : ""}` : ""}
+      <p style="margin:12px 0 0"><button type="button" class="link" data-act="up-addrow" data-id="${e.id}">+ Add row</button></p>
       <div class="actions">
-        <button type="button" class="btn" data-act="import" data-id="${e.id}" ${willWrite ? "" : "disabled"}>Import ${willWrite} rows</button>
+        <button type="button" class="btn" data-act="up-import" data-id="${e.id}" ${toImport ? "" : "disabled"}>Import ${toImport} rows</button>
       </div>
+      ${renderUploadModal(e)}
     </div>`;
   }
 
-  function renderRow(e, r) {
+  function renderUpRow(e, r) {
+    const g = groupOf(r);
+    const probs = rowProblems(e, r);
     const who = r.values.widow_name || r.values.soldier_name || "(no name)";
-    const open = e.openRow === r.id || (e.openRow === undefined && r.action === "needs");
-    const hasDetail = r.changes.length || r.problems.length || r.action === "needs" || r.action === "dup";
-    const editing = e.editRow === r.id;
-    return `<li>
-      <div class="row-line">
-        <span class="rownum">Row ${r.rowNum}</span>
-        <button type="button" class="who" style="text-align:left" data-act="toggle-row" data-id="${e.id}" data-r="${r.id}" ${hasDetail ? "" : "disabled"}>
-          <b class="${r.excluded ? "strike" : ""}">${esc(who)}</b><small>${esc(r.values.district)}</small>
-        </button>
-        <span class="tags">
-          ${r.edited.size ? `<span class="ok">edited</span>` : ""}
-          ${r.changes.length ? `<span class="muted">${r.changes.length} change${r.changes.length === 1 ? "" : "s"}</span>` : ""}
-          ${r.problems.length ? `<span class="warn">${r.problems.length} problem${r.problems.length === 1 ? "" : "s"}</span>` : ""}
-          <button type="button" class="link" data-act="edit-row" data-id="${e.id}" data-r="${r.id}">${editing ? "close" : "edit"}</button>
-        </span>
-      </div>
-      ${editing ? renderEditor(e, r) : ""}
-      ${open && hasDetail && !editing ? `<div class="detail">
-        ${r.changes.length ? `<div class="table-wrap"><table class="changes"><tbody>${r.changes.map(([l, o, n]) => `<tr><td>${esc(l)}</td><td class="strike">${esc(o ?? "(blank)")}</td><td>${esc(n)}</td></tr>`).join("")}</tbody></table></div>` : ""}
-        ${r.problems.map((p) => `<p class="warn small" style="margin:0">${esc(p)}</p>`).join("")}
-        ${r.action === "needs" ? `<p class="small" style="margin:0">Might be ${esc(r.code)} — ${esc(r.reasons.join(", ").toLowerCase())}. Will be added as new and flagged.</p>` : ""}
-        ${r.action === "dup" ? `<p class="small" style="margin:0">Same as row ${r.dupOf}. Won't be imported.</p>` : ""}
-      </div>` : ""}
-    </li>`;
+    const sub = [r.values.district, g === "dup" ? (r.dupOf ? `same as row ${r.dupOf}` : `like ${r.code}, already saved`) : ""].filter(Boolean).join(" · ");
+    return `<li><div class="row-line up-row">
+      <span class="rownum">${r.added ? "Added" : `Row ${r.rowNum}`}</span>
+      <span class="who"><b>${esc(who)}</b><small>${esc(sub)}</small></span>
+      <span class="tags">
+        ${r.edited.size ? `<span class="ok">edited</span>` : ""}
+        ${g === "update" ? `<span class="muted">${r.changes.length} change${r.changes.length === 1 ? "" : "s"}</span>` : ""}
+        ${probs.length ? `<span class="warn">${probs.length} problem${probs.length === 1 ? "" : "s"}</span>` : ""}
+        <button type="button" class="icon-sq" data-act="up-row" data-id="${e.id}" data-r="${r.id}" title="Edit row" aria-label="Edit row ${r.rowNum}">${ceaIcons.pencil}</button>
+        ${g === "dup" ? `<button type="button" class="${r.included ? "btn sm" : "btn-ghost"}" data-act="up-include" data-id="${e.id}" data-r="${r.id}">${r.included ? "Included ✓" : "Include"}</button>` : `<button type="button" class="icon-sq del" data-act="up-delrow" data-id="${e.id}" data-r="${r.id}" title="Delete row" aria-label="Delete row ${r.rowNum}">${ceaIcons.trash}</button>`}
+      </span></div></li>`;
   }
 
-  function renderEditor(e, r) {
-    const cols = activeColumns(e);
-    return `<div class="editor" style="margin-left:64px">
-      <div class="editor-grid">
-        ${cols.map((c) => `<label><span>${esc(label(c.key, S.extras))}${r.edited.has(c.key) ? "<i>edited</i>" : ""}</span>
-          <input class="field" data-edit="${esc(c.key)}" data-id="${e.id}" data-r="${r.id}" value="${esc(display(c.key, (e.draft[c.key] ?? rowValue(e, r, c.key))))}"></label>`).join("")}
-      </div>
-      <div class="actions" style="margin-top:12px;padding-top:12px">
-        <button type="button" class="btn sm" data-act="save-row" data-id="${e.id}" data-r="${r.id}">Save</button>
-        <button type="button" class="link muted-link" data-act="edit-row" data-id="${e.id}" data-r="${r.id}">Cancel</button>
-        <button type="button" class="link" style="margin-left:auto;color:var(--warning)" data-act="exclude" data-id="${e.id}" data-r="${r.id}">${r.excluded ? "Put back" : "Leave out"}</button>
-      </div>
-    </div>`;
+  // Every column of the row as a box. A box with a problem gets an orange border and the reason under it.
+  function upFields(e, r) {
+    const probs = r ? rowProblems(e, r) : [];
+    return `<div class="fgrid">${e.cols.map((c) => {
+      const v = r ? display(c.key, String(r.values[c.key] || "")) : "";
+      const p = probs.find((x) => x.key === c.key);
+      return `<label>${esc(colName(c))}${r?.edited.has(c.key) ? ` <span class="ok">· edited</span>` : ""}
+        <input class="field ${p ? "missing" : ""}" data-uf="${esc(c.key)}" value="${esc(v)}">${p ? `<span class="warn tiny">${esc(p.text)}</span>` : ""}</label>`;
+    }).join("")}</div>`;
   }
 
-  function renderColumns(e) {
-    const cols = activeColumns(e);
-    const removing = e.removing ? cols.find((c) => c.key === e.removing) : null;
-    const renaming = e.renaming ? cols.find((c) => c.key === e.renaming) : null;
-    return `<div class="cols">
-      <button type="button" class="cols-head" data-act="toggle" data-id="${e.id}" data-key="colsOpen"><span>Columns (${cols.length})</span><span class="tiny muted">${e.colsOpen ? "hide" : "change"}</span></button>
-      ${e.colsOpen ? `<div class="cols-body">
-        <ul class="chips">${cols.map((c) => `<li class="chip ${c.added ? "added" : ""}">
-          <span>${esc(label(c.key, S.extras))}</span>${c.added && c.value ? `<span class="tiny muted">= ${esc(c.value)}</span>` : ""}
-          <button type="button" class="pill" data-act="ask-rename" data-id="${e.id}" data-key="${esc(c.key)}">Rename</button>
-          ${isRequired(c.key) ? "" : `<button type="button" class="pill" data-act="${c.added ? "remove-added" : "ask-remove"}" data-id="${e.id}" data-key="${esc(c.key)}" data-h="${esc(c.heading ?? "")}">Remove</button>`}</li>`).join("")}</ul>
-        ${renaming ? `<div class="modal-back" data-act="cancel-rename" data-id="${e.id}">
-          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="rename-title" data-act="noop">
-            <h3 id="rename-title">Rename &ldquo;${esc(label(renaming.key, S.extras))}&rdquo;</h3>
-            <p>The new name is used everywhere. Saved values are kept.</p>
-            <input class="field" style="margin-top:16px" id="rename-${e.id}" value="${esc(label(renaming.key, S.extras))}" aria-label="New name">
-            ${e.renameError ? `<p class="danger">${esc(e.renameError)}</p>` : ""}
-            <div class="modal-btns">
-              <button type="button" class="btn" data-act="do-rename" data-id="${e.id}">Save</button>
-              <button type="button" class="link muted-link" data-act="cancel-rename" data-id="${e.id}">Cancel</button>
-            </div>
-          </div>
-        </div>` : ""}
-        ${removing ? `<div class="modal-back" data-act="cancel-remove" data-id="${e.id}">
-          <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-act="noop">
-            <h3 id="modal-title">Remove &ldquo;${esc(label(removing.key, S.extras))}&rdquo;?</h3>
-            <p>Saved values are kept.</p>
-            <div class="modal-btns">
-              <button type="button" class="btn-ghost" data-act="remove-once" data-id="${e.id}">This Excel only</button>
-              <button type="button" class="btn" style="background:var(--danger);color:var(--bg)" data-act="remove-always" data-id="${e.id}">Always</button>
-              <button type="button" class="link muted-link" data-act="cancel-remove" data-id="${e.id}">Cancel</button>
-            </div>
-          </div>
-        </div>` : ""}
-        ${e.adding ? `<div class="add-row">
-          <input class="field" id="add-key-${e.id}" placeholder="New column name" aria-label="New column name" style="grid-column:span 2">
-          <span style="display:flex;gap:8px"><button type="button" class="btn sm" data-act="add-col" data-id="${e.id}">Add</button><button type="button" class="link muted-link" data-act="toggle" data-id="${e.id}" data-key="adding">Cancel</button></span>
-        </div>` : `<p style="margin:12px 0 0"><button type="button" class="link" data-act="toggle" data-id="${e.id}" data-key="adding">+ Add column</button></p>`}
-        ${e.colError ? `<p class="danger small" style="margin:8px 0 0">${esc(e.colError)}</p>` : ""}
-      </div>` : ""}
+  function renderUploadModal(e) {
+    const m = e.modal;
+    if (!m) return "";
+    const small = (title, body) => `<div class="modal-back" data-act="up-close" data-id="${e.id}">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="up-m-${e.id}" data-act="noop"><h3 id="up-m-${e.id}">${title}</h3>${body}</div></div>`;
+    const err = e.err ? `<p class="danger">${esc(e.err)}</p>` : "";
+    const cancel = `<button type="button" class="link muted-link" data-act="up-close" data-id="${e.id}">Cancel</button>`;
+    const twoWays = (once, forever, foreverText) => `<div class="modal-btns">
+      <button type="button" class="btn-ghost" data-act="${once}" data-id="${e.id}" style="justify-content:center">This Excel only</button>
+      <button type="button" class="btn" style="background:var(--danger);color:var(--bg)" data-act="${forever}" data-id="${e.id}">${foreverText}</button>${cancel}</div>`;
+    const col = m.key ? e.cols.find((c) => c.key === m.key) : null;
+
+    if (m.type === "rename") return small(`Rename “${esc(colName(col))}”`, `<p>The new name is used for future Excels too.</p>
+      <input class="field" style="margin-top:16px" id="up-in-${e.id}" value="${esc(colName(col))}" aria-label="New name">${err}
+      <div class="modal-btns"><button type="button" class="btn" data-act="up-do-rename" data-id="${e.id}">Save</button>${cancel}</div>`);
+    if (m.type === "delcol") return small(`Delete “${esc(colName(col))}”?`, `<p>Saved values are kept.</p>${twoWays("up-delcol-once", "up-delcol-forever", "Forever")}`);
+    if (m.type === "addcol") return small("Add column", `<input class="field" style="margin-top:16px" id="up-in-${e.id}" placeholder="Column name" aria-label="Column name">${err}
+      <div class="modal-btns"><button type="button" class="btn" data-act="up-do-addcol" data-id="${e.id}">Add</button>${cancel}</div>`);
+
+    const r = m.r ? rowOf(e, m.r) : null;
+    // A deleted row is left out of this Excel only; if it is in the next Excel it shows up as usual.
+    if (m.type === "delrow") return small(`Delete row ${r.added ? "" : r.rowNum}?`, `<p>${esc(r.values.widow_name || "")} won't be imported from this Excel.</p>
+      <div class="modal-btns"><button type="button" class="btn" style="background:var(--danger);color:var(--bg)" data-act="up-delrow-once" data-id="${e.id}">Delete</button>${cancel}</div>`);
+
+    // "row" (open a row) and "addrow" (a blank row) use the big pop-up.
+    const g = r ? groupOf(r) : "new";
+    const title = r ? esc(r.values.widow_name || r.values.soldier_name || "(no name)") : "Add row";
+    let sub = "New family, added by you";
+    if (r && !r.added) sub = g === "update" ? `Row ${r.rowNum} · update to ${r.code}` : g === "dup" ? `Row ${r.rowNum} · duplicate` : `Row ${r.rowNum} · new family`;
+    const changes = r && g === "update" ? `<section class="fsec"><div class="fsec-head"><b>Changes</b></div><div class="table-wrap"><table class="changes"><tbody>
+      ${r.changes.map(([l, o, n]) => `<tr><td>${esc(l)}</td><td class="strike">${esc(o ?? "(blank)")}</td><td>${esc(n)}</td></tr>`).join("")}</tbody></table></div></section>` : "";
+    const dup = r && g === "dup" ? `<section class="fsec"><div class="fsec-head"><b>Duplicate</b></div>
+      <p class="small" style="margin:0 0 10px;color:var(--text)">${r.dupOf ? `Same as row ${r.dupOf} in this Excel.` : `Looks like ${esc(r.code)}, already saved — ${esc(r.reasons.join(", ").toLowerCase())}.`} ${r.included ? "You included it, so it will be imported." : "It is imported only if you include it."}</p></section>` : "";
+    return `<div class="modal-back" data-act="up-close" data-id="${e.id}">
+      <div class="modal wide fmodal" role="dialog" aria-modal="true" aria-labelledby="up-r-${e.id}" data-act="noop">
+        <div class="fmodal-head"><div><h3 id="up-r-${e.id}">${title}</h3><p>${sub}</p></div>
+          <button type="button" class="x" data-act="up-close" data-id="${e.id}" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+        <div class="fmodal-body">${changes}${dup}<section class="fsec"><div class="fsec-head"><b>Details</b></div>${upFields(e, r)}</section>${err}</div>
+        <div class="fmodal-foot">
+          ${r && g !== "dup" ? `<button type="button" class="link" style="color:var(--danger)" data-act="up-delrow" data-id="${e.id}" data-r="${r.id}">Delete row</button>` : "<span></span>"}
+          <div style="display:flex;gap:12px;align-items:center">${cancel}
+            <button type="button" class="btn" data-act="${r ? "up-save-row" : "up-save-addrow"}" data-id="${e.id}">Save</button></div>
+        </div>
+      </div>
     </div>`;
   }
 
   function renderResult(e) {
     const x = e.result;
-    return `<div class="panel">
-      <h2 class="ok">Done</h2>
-      <ul style="margin:12px 0 0;padding-left:20px;display:flex;flex-direction:column;gap:4px">
-        <li>${x.created} new families${x.children ? ` (${x.children} children)` : ""}</li>
-        <li>${x.updated} updated</li>
-        <li>${x.unchanged} no change</li>
-        ${x.dup ? `<li>${x.dup} repeated, skipped</li>` : ""}
-        ${x.excluded ? `<li>${x.excluded} left out</li>` : ""}
-        ${x.corrected ? `<li>${x.corrected} values edited by you</li>` : ""}
-        ${x.issues ? `<li class="warn">${x.issues} to check later</li>` : ""}
-      </ul>
-    </div>`;
+    return `<div class="panel"><h2 class="ok">Done</h2>
+      <p style="margin:8px 0 0">${x.created} new families${x.children ? ` (${x.children} children)` : ""} · ${x.updated} updated</p></div>`;
   }
 
   // ----- documents -----
@@ -846,7 +818,6 @@ a { color: var(--accent); }
       <h2>Which form?</h2>
       <div class="cards" style="margin-top:16px">
         <button type="button" class="card-btn" data-act="cea-pick" data-id="${e.id}"><b>CEA</b><span>Children Education Allowance</span></button>
-        <button type="button" class="card-btn" data-act="cea-upload-here" data-id="${e.id}"><b>Upload a form</b><span>PDF of the form</span></button>
       </div>
     </div>`;
     if (e.stage === "reading") return chip + `<p class="muted">Reading the form...</p>`;
@@ -1071,16 +1042,16 @@ a { color: var(--accent); }
   // ---------- actions ----------
   function dropExcel(variant) {
     const e = { id: newId(), kind: "excel", variant, file: variant === "extra" ? "widows_sheet_with_extra_columns.xlsx" : "widows_sheet_sample.xlsx", size: variant === "extra" ? "10 KB" : "13 KB",
-      stage: "reading", mapping: {}, proposed: {}, ask: {}, askOther: {}, removed: new Set(), added: {}, open: {}, draft: {}, rows: [] };
-    for (const [h, key] of headingsOf(e)) {
-      if (key === "?unit") { e.ask[h] = ["unit", "regiment"]; e.mapping[h] = null; }
-      else if (key?.startsWith("extra:")) {
-        if (S.extras[key]) e.mapping[h] = key; else e.proposed[h] = h;
-      } else e.mapping[h] = key;
+      stage: "reading", cols: [], open: {}, rows: [] };
+    // S NO and DOCUMENTS have no column (key null), so they are not shown at all.
+    for (const [h, key] of headingsOf(variant)) {
+      if (!key || S.alwaysOff.has(key) || e.cols.some((c) => c.key === key)) continue;
+      e.cols.push({ key, heading: h, isNew: key.startsWith("extra:") && !S.extras[key] });
     }
     e.rows = buildRows(variant, S.families);
+    if (variant === "extra") e.rows.forEach((r) => { r.values["extra:unit"] = r.values.unit; });
     S.entries.push(e); S.attach = false; render();
-    setTimeout(() => { e.stage = "mapping"; render(); }, 600);
+    setTimeout(() => { e.stage = "columns"; render(); }, 600);
   }
 
   function dropDoc() {
@@ -1088,54 +1059,73 @@ a { color: var(--accent); }
     S.attach = false; render();
   }
 
-  function confirmMapping(e) {
-    const hs = headingsOf(e);
-    const sources = new Set(Object.values(e.mapping).filter(Boolean));
-    const unanswered = Object.keys(e.ask).filter((h) => !e.mapping[h] && !e.proposed[h]);
-    if (unanswered.length) { e.mapError = `Answer the question about ${unanswered.join(", ")} first.`; render(); return; }
-    const missing = ["soldier_name", "widow_name"].filter((k) => !sources.has(k)).map((k) => FIELDS[k][0]);
-    if (missing.length) { e.mapError = `This sheet has no ${missing.join(" or ")} column.`; render(); return; }
-    // New columns are created now that he has continued.
-    for (const [h] of hs) if (e.proposed[h] && !e.mapping[h]) {
-      const key = "extra:" + e.proposed[h].toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-      S.extras[key] = { label: e.proposed[h] };
-      e.mapping[h] = key;
-    }
-    e.mapError = null; e.stage = "preview"; render();
-  }
-
-  function saveRow(e, r) {
-    const problems = r.problems.filter((p) => !p.startsWith("You typed"));
-    for (const [key, raw] of Object.entries(e.draft)) {
-      const v = raw.trim();
-      const before = rowValue(e, r, key);
-      if (display(key, before) === v) continue;
-      r.edited.add(key);
-      if ((key === "phone" || key === "alternate_phone" || key === "co_unit_phone") && v) {
-        if (!phoneOk(v)) { problems.push(`You typed '${v}' — not a valid phone`); r.values[key] = ""; continue; }
-        r.values[key] = cleanPhone(v);
-        if (key === "phone") { const i = problems.findIndex((p) => /phone|10-digit/.test(p) && !p.startsWith("You typed")); if (i >= 0) problems.splice(i, 1); }
-        continue;
-      }
-      if ((key === "date_of_death" || /_dob$/.test(key)) && v && !dateOk(v)) { problems.push(`You typed '${v}' — not a valid date`); r.values[key] = ""; continue; }
-      r.values[key] = v;
-    }
-    r.problems = problems;
-    e.draft = {}; e.editRow = null; render();
+  // Values typed in the row pop-up. A valid phone is tidied to +91.
+  function readFields(row) {
+    document.querySelectorAll("[data-uf]").forEach((inp) => {
+      const k = inp.dataset.uf, v = inp.value.trim();
+      if (v === display(k, String(row.values[k] || ""))) return;
+      row.edited.add(k);
+      row.values[k] = PHONE_KEYS.has(k) && phoneDigits(v).length === 10 ? cleanPhone(v) : v;
+    });
   }
 
   function runImport(e) {
-    const live = e.rows.filter((r) => !r.excluded);
-    const by = (a) => live.filter((r) => r.action === a);
-    const childCount = (rs) => rs.reduce((n, r) => n + [1, 2, 3].filter((s) => r.values[`child${s}_name`]).length, 0);
-    const corrected = live.filter((r) => ["create", "update", "needs"].includes(r.action)).reduce((n, r) => n + r.edited.size, 0);
-    e.result = {
-      created: by("create").length + by("needs").length, children: childCount([...by("create"), ...by("needs")]),
-      updated: by("update").length, fields: by("update").reduce((n, r) => n + r.changes.length, 0) + corrected,
-      unchanged: by("unchanged").length, dup: by("dup").length, excluded: e.rows.length - live.length, corrected,
-      needs: by("needs").length, issues: [...by("create"), ...by("update"), ...by("needs")].reduce((n, r) => n + r.problems.length, 0) + by("needs").length,
-    };
-    e.stage = "done"; render();
+    const rows = liveRows(e).filter(willImport);
+    const created = rows.filter((r) => groupOf(r) !== "update");
+    e.result = { created: created.length, updated: rows.length - created.length,
+      children: created.reduce((n, r) => n + [1, 2, 3].filter((s) => r.values[`child${s}_name`]).length, 0) };
+    e.stage = "done";
+  }
+
+  function handleUpload(act, t, e) {
+    const r = e && t.dataset.r ? rowOf(e, t.dataset.r) : null;
+    const typed = () => document.getElementById(`up-in-${e.id}`).value.trim();
+    const nameTaken = (text, except) => e.cols.some((c) => c.key !== except && colName(c).toLowerCase() === text.toLowerCase());
+    const done = () => { e.modal = null; e.err = null; return true; };
+    switch (act) {
+      case "up-close": return done();
+      case "up-rename": e.modal = { type: "rename", key: t.dataset.key }; return true;
+      case "up-do-rename": {
+        const text = typed();
+        if (!text) { e.err = "Type a name."; return true; }
+        if (nameTaken(text, e.modal.key)) { e.err = `There is already a column called “${text}”.`; return true; }
+        S.renamed[e.modal.key] = text; return done();
+      }
+      case "up-delcol": e.modal = { type: "delcol", key: t.dataset.key }; return true;
+      case "up-delcol-once": e.cols = e.cols.filter((c) => c.key !== e.modal.key); return done();
+      case "up-delcol-forever": S.alwaysOff.add(e.modal.key); e.cols = e.cols.filter((c) => c.key !== e.modal.key); return done();
+      case "up-addcol": e.modal = { type: "addcol" }; return true;
+      case "up-do-addcol": {
+        // A name we already know uses that column; any other name makes a new one.
+        const text = typed();
+        if (!text) { e.err = "Type a column name."; return true; }
+        if (nameTaken(text)) { e.err = `“${text}” is already in this Excel.`; return true; }
+        let key = [...Object.keys(FIELDS), ...Object.keys(S.extras)].find((k) => label(k, S.extras).toLowerCase() === text.toLowerCase());
+        if (!key) { key = "extra:" + slug(text); S.extras[key] = { label: text }; }
+        S.alwaysOff.delete(key);
+        e.cols.push({ key, heading: text, isNew: false }); return done();
+      }
+      case "up-continue":
+        for (const c of e.cols) if (c.isNew) { S.extras[c.key] = { label: c.heading }; c.isNew = false; }
+        e.stage = "rows"; return true;
+      case "up-back": e.stage = "columns"; return true;
+      case "up-row": e.modal = { type: "row", r: r.id }; return true;
+      case "up-delrow": e.modal = { type: "delrow", r: r.id }; return true;
+      case "up-delrow-once": rowOf(e, e.modal.r).deleted = true; return done();
+      case "up-save-row": readFields(rowOf(e, e.modal.r)); return done();
+      case "up-include": r.included = !r.included; return true;
+      case "up-addrow": e.modal = { type: "addrow" }; return true;
+      case "up-save-addrow": {
+        const row = { values: {}, edited: new Set(), changes: [], action: "create", added: true };
+        readFields(row);
+        if (!row.values.soldier_name || !row.values.widow_name) { e.err = "Fill in the soldier's name and the name of the NOK."; return true; }
+        row.edited.clear();
+        row.rowNum = Math.max(...e.rows.map((x) => x.rowNum)) + 1; row.id = "r" + row.rowNum;
+        e.rows.push(row); e.open.new = true; return done();
+      }
+      case "up-import": runImport(e); return true;
+      default: return false;
+    }
   }
 
   document.addEventListener("click", (ev) => {
@@ -1143,7 +1133,6 @@ a { color: var(--accent); }
     if (!t) { if (S.attach && !ev.target.closest(".composer")) { S.attach = false; render(); } return; }
     const act = t.dataset.act;
     const e = t.dataset.id ? entry(t.dataset.id) : null;
-    const r = e && t.dataset.r ? rowOf(e, t.dataset.r) : null;
 
     switch (act) {
       case "reset": rand = rng(4242); reset(); window.scrollTo(0, 0); return;
@@ -1154,52 +1143,7 @@ a { color: var(--accent); }
       case "drop-doc": dropDoc(); return;
       case "send": sendText(); return;
       case "toggle": e[t.dataset.key] = !e[t.dataset.key]; if (t.dataset.key === "adding") e.colError = null; break;
-      case "confirm-map": confirmMapping(e); return;
-      case "toggle-group": { const g = t.dataset.g; const cur = e.open[g] ?? g === "needs"; e.open[g] = !cur; break; }
-      case "toggle-row": { const isOpen = e.openRow === r.id || (e.openRow === undefined && r.action === "needs"); e.openRow = isOpen ? null : r.id; break; }
-      case "edit-row": e.draft = {}; e.editRow = e.editRow === r.id ? null : r.id; break;
-      case "save-row": saveRow(e, r); return;
-      case "exclude": r.excluded = !r.excluded; e.editRow = null; e.draft = {}; break;
-      case "answer": e.mapping[t.dataset.h] = t.dataset.key; delete e.proposed[t.dataset.h]; e.askOther[t.dataset.h] = false; e.mapError = null; break;
-      case "ask-other": e.askOther[t.dataset.h] = !e.askOther[t.dataset.h]; break;
-      case "use-other": {
-        // One of our columns if the name matches, otherwise a new column with that name.
-        const h = t.dataset.h;
-        const text = document.getElementById(`other-${e.id}-${t.dataset.i}`).value.trim();
-        if (!text) return;
-        const key = [...Object.keys(FIELDS), ...Object.keys(S.extras)].find((k) => label(k, S.extras).toLowerCase() === text.toLowerCase());
-        if (key) { e.mapping[h] = key; delete e.proposed[h]; } else { e.mapping[h] = null; e.proposed[h] = text; }
-        e.askOther[h] = false; e.mapError = null; break;
-      }
-      case "ask-remove": e.removing = t.dataset.key; e.removingH = t.dataset.h; break;
-      case "cancel-remove": e.removing = null; break;
-      case "remove-once": e.removed.add(e.removingH); e.removing = null; break;
-      case "remove-always": S.alwaysOff.add(e.removing); e.removing = null; break;
-      case "remove-added": delete e.added[t.dataset.key]; break;
-      case "ask-rename": e.renaming = t.dataset.key; e.renameError = null; break;
-      case "cancel-rename": e.renaming = null; break;
-      case "do-rename": {
-        const text = document.getElementById(`rename-${e.id}`).value.trim();
-        if (!text) { e.renameError = "Type a name."; break; }
-        const clash = [...Object.keys(FIELDS), ...Object.keys(S.extras)].some((k) => k !== e.renaming && label(k, S.extras).toLowerCase() === text.toLowerCase());
-        if (clash) { e.renameError = `There is already a column called “${text}”.`; break; }
-        S.renamed[e.renaming] = text; e.renaming = null; break;
-      }
-      case "add-col": {
-        // A name we know adds that column; any other name creates a new column.
-        const text = document.getElementById(`add-key-${e.id}`).value.trim();
-        const val = "";
-        if (!text) { e.colError = "Type a column name."; break; }
-        let key = [...Object.keys(FIELDS), ...Object.keys(S.extras)].find((k) => label(k, S.extras).toLowerCase() === text.toLowerCase());
-        if (key && activeColumns(e).some((c) => c.key === key)) { e.colError = `“${text}” is already in this Excel.`; break; }
-        if (!key) {
-          key = "extra:" + text.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-          S.extras[key] = { label: text };
-        }
-        S.alwaysOff.delete(key);
-        e.added[key] = val; e.adding = false; e.colError = null; break;
-      }
-      case "import": runImport(e); return;
+      case "toggle-group": { const g = t.dataset.g; const cur = e.open[g] ?? g === "dup"; e.open[g] = !cur; break; }
       case "pick-fam": e.famIdx = +t.dataset.i; e.member = null; e.type = ""; e.stage = "details"; break;
       case "belong": e.member = t.dataset.m || null; return; // radio state is already shown
       case "doc-back": e.stage = "pick"; e.famIdx = null; break;
@@ -1211,7 +1155,7 @@ a { color: var(--accent); }
         fam.docs.unshift({ type, who: e.member == null ? "Whole family" : fam.members.find((m) => m.id === e.member).name, file: true });
         e.stage = "done"; break;
       }
-      default: if (!handleCea(act, t, e)) return;
+      default: if (!handleUpload(act, t, e) && !handleCea(act, t, e)) return;
     }
     render();
   });
