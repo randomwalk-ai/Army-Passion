@@ -11,3 +11,5 @@ pytest==8.3.4
 openpyxl==3.1.5
 python-multipart==0.0.20
 httpx==0.28.1
+pypdf==6.21.4
+reportlab==5.1.0

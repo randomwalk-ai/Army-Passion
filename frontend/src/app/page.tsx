@@ -1,140 +1,228 @@
 "use client";
 
-import { useRef, useState } from "react";
-import Conversation, { type Entry } from "@/components/Conversation";
-import PromptBox from "@/components/PromptBox";
-import Sidebar from "@/components/Sidebar";
-import { uploadSheet } from "@/lib/api";
-import { classify } from "@/lib/files";
+/** Home: the numbers that matter, and the four things he can do. */
+
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import AppShell from "@/components/AppShell";
+import { Notice, buttonSecondary, errorText } from "@/components/ui";
+import { getDashboard, type Stat } from "@/lib/api";
+import { CURRENT_USER } from "@/lib/currentUser";
+
+function greeting(): string {
+  const hour = Number(
+    new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }).format(
+      new Date(),
+    ),
+  );
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function today(): string {
+  return new Intl.DateTimeFormat("en-IN", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  }).format(new Date());
+}
+
+const ACTIONS = [
+  {
+    href: "/upload",
+    title: "Upload a sheet",
+    body: "Add or update many families at once from an Excel sheet. You check everything before it is saved.",
+    icon: "M12 16V4m0 0L7 9m5-5l5 5M5 20h14",
+  },
+  {
+    href: "/families/new",
+    title: "Add a family",
+    body: "Type in one family on a simple form. Only the two names are needed to start.",
+    icon: "M12 5v14M5 12h14",
+  },
+  {
+    href: "/cea",
+    title: "CEA claims",
+    body: "See who can claim Children Education Allowance, and print a filled-in claim form.",
+    icon: "M4 8l8-4 8 4-8 4-8-4zm3 2v5c0 1.5 2.5 3 5 3s5-1.5 5-3v-5",
+  },
+  {
+    href: null,
+    title: "Voice notes",
+    body: "Record a call and the details are filled in for you.",
+    icon: "M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3zM6 11a6 6 0 0 0 12 0M12 17v3",
+  },
+];
+
+function StatTile({ stat, large }: { stat: Stat; large: boolean }) {
+  const attention = stat.tone === "attention" && stat.value > 0;
+  const body = (
+    <>
+      <p className={`font-medium text-muted ${large ? "text-[17px]" : "text-[15px]"}`}>{stat.label}</p>
+      <p
+        className={`mt-1 font-semibold tabular-nums tracking-tight ${large ? "text-5xl sm:text-6xl" : "text-4xl"}`}
+      >
+        {stat.value.toLocaleString("en-IN")}
+      </p>
+      {stat.hint && (
+        <p className="mt-2 flex items-center gap-1.5 text-[15px] text-muted">
+          {attention && (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="shrink-0 text-warning" aria-hidden="true">
+              <path d="M12 3l10 18H2L12 3z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+              <path d="M12 10v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <circle cx="12" cy="17.2" r="1.1" fill="currentColor" />
+            </svg>
+          )}
+          {attention && <span className="sr-only">Needs attention:</span>}
+          {stat.hint}
+        </p>
+      )}
+    </>
+  );
+  const classes = `block rounded-2xl border bg-surface p-5 sm:p-6 ${
+    attention ? "border-warning/50" : "border-border"
+  }`;
+  return stat.href ? (
+    <Link href={stat.href} className={`${classes} transition hover:border-accent hover:shadow-sm`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={classes}>{body}</div>
+  );
+}
+
+function SkeletonTiles() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2" aria-hidden="true">
+      {[0, 1].map((i) => (
+        <div key={i} className="h-40 animate-pulse rounded-2xl bg-surface" />
+      ))}
+    </div>
+  );
+}
 
 export default function Home() {
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [dragging, setDragging] = useState(false);
+  const [stats, setStats] = useState<Stat[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  // Drag events fire for every child element, so count them instead of
-  // toggling a flag — otherwise the overlay flickers as the pointer moves.
-  const dragDepth = useRef(0);
+  const load = useCallback(() => {
+    setError(null);
+    getDashboard()
+      .then((d) => setStats(d.stats))
+      .catch((e) => setError(errorText(e)));
+  }, []);
 
-  function update(id: string, changes: Partial<Extract<Entry, { kind: "file" }>>) {
-    setEntries((prev) =>
-      prev.map((entry) =>
-        entry.id === id && entry.kind === "file" ? { ...entry, ...changes } : entry,
-      ),
-    );
-  }
+  useEffect(load, [load]);
 
-  function addFiles(files: FileList) {
-    for (const file of Array.from(files)) {
-      const id = crypto.randomUUID();
-      const fileKind = classify(file);
-
-      setEntries((prev) => [
-        ...prev,
-        {
-          id,
-          kind: "file",
-          name: file.name,
-          size: file.size,
-          fileKind,
-          state: fileKind === "excel" ? "reading" : undefined,
-          // Audio and documents are uploaded by their own components, which need the file.
-          file: fileKind === "audio" || fileKind === "document" ? file : undefined,
-        },
-      ]);
-
-      if (fileKind === "excel") {
-        uploadSheet(file)
-          .then((upload) => update(id, { state: "ready", upload }))
-          .catch((error: unknown) =>
-            update(id, {
-              state: "failed",
-              error:
-                error instanceof Error
-                  ? error.message
-                  : "I could not reach the server. Is the backend running?",
-            }),
-          );
-      }
-    }
-  }
-
-
-  function addText(text: string) {
-    setEntries((prev) => [...prev, { id: crypto.randomUUID(), kind: "text", text }]);
-  }
+  const [main, rest] = stats ? [stats.slice(0, 2), stats.slice(2)] : [[], []];
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-bg">
-      <Sidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        onNewChat={() => {
-          setEntries([]);
-          setSidebarOpen(false);
-        }}
-      />
+    <AppShell>
+      <div className="mb-8">
+        <p className="text-[16px] text-muted">{today()}</p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">{greeting()}, {CURRENT_USER.name.split(" ")[0]}</h1>
+      </div>
 
-      <main
-        className="relative flex min-w-0 flex-1 flex-col"
-        onDragEnter={(e) => {
-          e.preventDefault();
-          dragDepth.current += 1;
-          if (e.dataTransfer.types.includes("Files")) setDragging(true);
-        }}
-        onDragOver={(e) => e.preventDefault()}
-        onDragLeave={(e) => {
-          e.preventDefault();
-          dragDepth.current -= 1;
-          if (dragDepth.current <= 0) setDragging(false);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          dragDepth.current = 0;
-          setDragging(false);
-          if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
-        }}
-      >
-        <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open menu"
-            className="rounded-lg p-2 text-muted hover:bg-surface-2 hover:text-text md:hidden"
-          >
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path
-                d="M4 7h16M4 12h16M4 17h16"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-          <span className="text-base font-medium text-muted md:hidden">Army Passion</span>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <Conversation
-            entries={entries}
-            onMappingConfirmed={(id) => update(id, { mappingConfirmed: true })}
-          />
-        </div>
-
-        <PromptBox onFiles={addFiles} onSend={addText} />
-
-        {dragging && (
-          <div className="pointer-events-none absolute inset-3 z-20 flex items-center justify-center">
-            <div
-              className="flex h-full w-full items-center justify-center rounded-3xl border-2
-                border-dashed border-accent bg-accent-soft/90"
-            >
-              <p className="text-xl font-medium text-text">
-                Drop the file here
-              </p>
-            </div>
+      {/* ---------- the numbers ---------- */}
+      <section aria-labelledby="numbers">
+        <h2 id="numbers" className="sr-only">
+          At a glance
+        </h2>
+        {error ? (
+          <div className="space-y-3">
+            <Notice tone="danger" title="The numbers could not be loaded">
+              {error}
+            </Notice>
+            <button onClick={load} className={buttonSecondary}>
+              Try again
+            </button>
           </div>
+        ) : !stats ? (
+          <SkeletonTiles />
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {main.map((s) => (
+                <StatTile key={s.key} stat={s} large />
+              ))}
+            </div>
+            {rest.length > 0 && (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {rest.map((s) => (
+                  <StatTile key={s.key} stat={s} large={false} />
+                ))}
+              </div>
+            )}
+          </>
         )}
-      </main>
-    </div>
+      </section>
+
+      {/* ---------- what he can do ---------- */}
+      <section aria-labelledby="actions" className="mt-12">
+        <h2 id="actions" className="mb-4 text-xl font-semibold">
+          What would you like to do?
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {ACTIONS.map((a) => {
+            const inner = (
+              <>
+                <span
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
+                    a.href ? "bg-accent-soft text-accent" : "bg-surface-2 text-muted"
+                  }`}
+                  aria-hidden="true"
+                >
+                  <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                    <path d={a.icon} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2 text-[19px] font-semibold">
+                    {a.title}
+                    {!a.href && (
+                      <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-muted">
+                        Coming soon
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-1 block text-[16px] leading-relaxed text-muted">{a.body}</span>
+                </span>
+              </>
+            );
+            return a.href ? (
+              <Link
+                key={a.title}
+                href={a.href}
+                className="group flex gap-4 rounded-2xl border border-border bg-bg p-5 transition
+                  hover:border-accent hover:bg-surface hover:shadow-sm"
+              >
+                {inner}
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  className="mt-3 shrink-0 text-muted transition group-hover:translate-x-0.5 group-hover:text-accent"
+                  aria-hidden="true"
+                >
+                  <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </Link>
+            ) : (
+              <div
+                key={a.title}
+                aria-disabled="true"
+                className="flex gap-4 rounded-2xl border border-dashed border-border bg-bg p-5 opacity-80"
+              >
+                {inner}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </AppShell>
   );
 }

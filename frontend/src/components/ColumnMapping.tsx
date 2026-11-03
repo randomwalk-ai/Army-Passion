@@ -61,6 +61,27 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
     (c) => choices[c.source_heading] === IGNORE,
   );
 
+  // Columns we have no home for: he decides, one by one, to keep each as new
+  // information or leave it out. Suggested ones start as "keep"; ones we could
+  // not make sense of start as "leave out", so junk like "S.No" stays out.
+  const [extraDecision, setExtraDecision] = useState<Record<string, "add" | "ignore">>(() => {
+    const initial: Record<string, "add" | "ignore"> = {};
+    for (const column of result.columns) {
+      if (!column.target_key) {
+        initial[column.source_heading] = column.suggested_new_field ? "add" : "ignore";
+      }
+    }
+    return initial;
+  });
+  const extras = [...proposed, ...unknown, ...ignored];
+
+  // Fields we keep that this sheet has no column for. They stay empty for
+  // these families (nothing already stored is wiped).
+  const notInSheet = result.target_fields.filter(
+    (f) => !f.key.startsWith(EXTRA_PREFIX) && !Object.values(choices).includes(f.key),
+  );
+  const [showNotInSheet, setShowNotInSheet] = useState(false);
+
   const missingRequired = options.filter(
     (f) => f.required && !Object.values(choices).includes(f.key),
   );
@@ -101,18 +122,19 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
     setSaving(true);
     setError(null);
     try {
-      // Create the proposed new fields now that he has agreed to them.
+      // Create the new fields he chose to keep, now that he has agreed.
       const created: Record<string, string> = {};
-      for (const column of proposed) {
+      for (const column of extras) {
+        if (extraDecision[column.source_heading] !== "add") continue;
         created[column.source_heading] = await addField(
           column.source_heading,
-          column.suggested_new_field as string,
+          column.suggested_new_field ?? column.source_heading,
         );
       }
 
       const toSend: Record<string, string> = {};
       for (const [heading, target] of Object.entries(choices)) {
-        toSend[heading] = created[heading] ?? target ?? IGNORE;
+        toSend[heading] = created[heading] ?? (target || IGNORE);
       }
       for (const [heading, key] of Object.entries(created)) {
         toSend[heading] = key;
@@ -180,24 +202,10 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
             )}
           </div>
 
-          {(proposed.length > 0 || asExtra.length > 0) && (
-            <div className="rounded-lg border border-accent bg-accent-soft px-3 py-2.5">
-              <p className="text-[15px] font-medium">
-                {proposed.length + asExtra.length} column
-                {proposed.length + asExtra.length === 1 ? "" : "s"} are new to me
-              </p>
+          {asExtra.length > 0 && (
+            <div className="rounded-lg border border-border px-3 py-2.5">
+              <p className="text-[15px] font-medium">Stored as extra information</p>
               <ul className="mt-1 space-y-0.5">
-                {proposed.map((column) => (
-                  <li key={column.source_heading} className="text-[15px]">
-                    {column.source_heading}
-                    {column.suggested_new_field !== column.source_heading && (
-                      <span className="text-muted">
-                        {" "}
-                        → store as &ldquo;{column.suggested_new_field}&rdquo;
-                      </span>
-                    )}
-                  </li>
-                ))}
                 {asExtra.map((column) => (
                   <li key={column.source_heading} className="text-[15px]">
                     {column.source_heading}
@@ -205,35 +213,96 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
                   </li>
                 ))}
               </ul>
-              <p className="mt-1.5 text-[14px] text-muted">
-                I will store these as new information against each family.
-              </p>
             </div>
           )}
 
-          {unknown.length > 0 && (
-            <div className="rounded-lg border border-warning px-3 py-2.5">
-              <p className="text-[15px] font-medium text-warning">
-                {unknown.length} column{unknown.length === 1 ? "" : "s"} I could not
-                work out
+          {extras.length > 0 && (
+            <div className="rounded-xl border border-accent bg-accent-soft px-4 py-3">
+              <p className="text-[16px] font-semibold">
+                {extras.length} extra column{extras.length === 1 ? "" : "s"} in your sheet
               </p>
-              <ul className="mt-1 space-y-0.5">
-                {unknown.map((column) => (
-                  <li key={column.source_heading} className="text-[15px]">
-                    {column.source_heading}
-                  </li>
-                ))}
+              <p className="mt-0.5 text-[15px] text-muted">
+                The database has no place for {extras.length === 1 ? "this" : "these"} yet.
+                Choose for each one: add it as new information, or leave it out.
+              </p>
+              <ul className="mt-3 space-y-2">
+                {extras.map((column) => {
+                  const decision = extraDecision[column.source_heading] ?? "ignore";
+                  const decide = (d: "add" | "ignore") => {
+                    setExtraDecision((prev) => ({ ...prev, [column.source_heading]: d }));
+                    // Undo an "ignore" set in the column editor, so his choice here wins.
+                    setChoices((prev) => ({ ...prev, [column.source_heading]: "" }));
+                  };
+                  return (
+                    <li
+                      key={column.source_heading}
+                      className="flex flex-col gap-2 rounded-lg bg-bg px-3 py-2.5 sm:flex-row sm:items-center"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[16px] font-medium">{column.source_heading}</p>
+                        {column.samples.length > 0 && (
+                          <p className="truncate text-[13px] text-muted">
+                            e.g. {column.samples.slice(0, 3).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 gap-1.5" role="group" aria-label={column.source_heading}>
+                        {(["add", "ignore"] as const).map((d) => (
+                          <button
+                            key={d}
+                            type="button"
+                            aria-pressed={decision === d}
+                            onClick={() => decide(d)}
+                            className={`rounded-full border px-4 py-2 text-[15px] transition ${
+                              decision === d
+                                ? d === "add"
+                                  ? "border-accent bg-accent font-semibold text-accent-fg"
+                                  : "border-text bg-text font-semibold text-bg"
+                                : "border-border bg-bg text-muted hover:bg-surface-2"
+                            }`}
+                          >
+                            {d === "add" ? "Add to database" : "Leave out"}
+                          </button>
+                        ))}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
-              <p className="mt-1.5 text-[14px] text-muted">
-                These will be skipped unless you tell me what they are.
-              </p>
             </div>
           )}
 
-          {ignored.length > 0 && (
-            <p className="text-[14px] text-muted">
-              Not importing: {ignored.map((c) => c.source_heading).join(", ")}
-            </p>
+          {notInSheet.length > 0 && (
+            <div className="rounded-xl border border-border px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setShowNotInSheet((v) => !v)}
+                aria-expanded={showNotInSheet}
+                className="flex w-full items-center justify-between gap-3 text-left"
+              >
+                <span>
+                  <span className="block text-[16px] font-semibold">
+                    {notInSheet.length} field{notInSheet.length === 1 ? "" : "s"} missing from your sheet
+                  </span>
+                  <span className="block text-[15px] text-muted">
+                    These stay empty for new families. Anything already stored is kept.
+                    You can still add one, with a value for every row, on the next step.
+                  </span>
+                </span>
+                <span className="shrink-0 text-[15px] text-accent underline">
+                  {showNotInSheet ? "Hide" : "Show"}
+                </span>
+              </button>
+              {showNotInSheet && (
+                <ul className="mt-3 flex flex-wrap gap-1.5">
+                  {notInSheet.map((f) => (
+                    <li key={f.key} className="rounded-full bg-surface-2 px-3 py-1 text-[14px]">
+                      {f.label}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
       )}

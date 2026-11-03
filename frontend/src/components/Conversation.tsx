@@ -5,6 +5,7 @@ import DocumentUpload from "@/components/DocumentUpload";
 import ImportPreview from "@/components/ImportPreview";
 import VoiceNote from "@/components/VoiceNote";
 import type { UploadResult } from "@/lib/api";
+import { CURRENT_USER } from "@/lib/currentUser";
 import { formatSize, type DroppedKind } from "@/lib/files";
 
 export type Entry =
@@ -119,7 +120,7 @@ function EmptyState() {
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col justify-center px-4 py-10">
       <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-        Good to see you, Colonel
+        Good to see you, {CURRENT_USER.name.split(" ")[0]}
       </h1>
       <p className="mt-3 text-lg text-muted">What would you like to do today?</p>
 

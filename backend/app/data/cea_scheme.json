@@ -1,0 +1,30 @@
+{
+  "code": "CEA",
+  "name": "Children Education Allowance (CEA) / Hostel Subsidy",
+  "authority": "CDA / Records (Govt of India)",
+  "category": "education",
+  "description": "Reimbursement of school education for the two eldest children of soldiers who died in harness (physical casualty, missing in action, medical boarded out). Class KG to 12, from academic year 2017-18. Claimed after the academic year ends.",
+  "benefit_amount": 33756,
+  "benefit_description": "₹2,813 per month per child (₹2,250 before Jan 2024); hostel ₹8,438 per month; double for a divyang child",
+  "is_recurring": true,
+  "source_reference": "backend/CEA-Application/CEA 2026.pdf and CEA GRANTS.png",
+  "required_documents": [
+    "contingent_bill",
+    "self_declaration",
+    "school_certificate",
+    "cancelled_cheque"
+  ],
+  "rules": {
+    "kind": "cea",
+    "eldest_children": 2,
+    "min_age": 3,
+    "max_age": 20,
+    "max_class": 12,
+    "first_academic_year": 2017,
+    "academic_year_start_month": 4,
+    "rates": [
+      {"from": "2017-07-01", "cea": 2250, "hostel": 6750, "divyang": 4500},
+      {"from": "2024-01-01", "cea": 2813, "hostel": 8438, "divyang": 5625}
+    ]
+  }
+}

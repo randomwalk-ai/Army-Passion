@@ -16,6 +16,8 @@
   --accent-fg: #ffffff;
   --danger: #b3261e;
   --warning: #8a5a00;
+  /* Native controls (dropdowns, checkboxes, scrollbars) follow the theme too. */
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,10 +33,12 @@
     --accent-fg: #0f1a14;
     --danger: #f2b8b5;
     --warning: #e8c37a;
+    color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --bg: #141413;
   --surface: #1d1d1b;
   --surface-2: #272724;

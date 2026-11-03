@@ -52,7 +52,37 @@ No real person, family, service number or bank account appears anywhere.
   once agreed, the app is coded to match. Open the file in a browser — it
   needs no backend.
 
-Not built yet: the eligibility engine, talking points, the families list and
+- **Home dashboard** (`/`): the key numbers (families, registered applicants,
+  who can claim CEA, stuck applications, missing details, children turning 18)
+  and the four main actions. The numbers come from `GET /api/dashboard` as a
+  list, so a new number can be added without changing the screen.
+- **Upload a sheet** (`/upload`): the Excel flow in three clear steps. Extra
+  columns in his sheet get an "Add to database / Leave out" choice each, and
+  the fields his sheet is missing are listed (they stay empty).
+- **Add a family** (`/families/new`): a simple form; only the two names are
+  needed. Uses the same cleaning rules as the Excel import, warns if the family
+  looks like one already in the system, and records the officer as the source.
+- **CEA claims** (`/cea`): every family checked against the Children Education
+  Allowance rules for a chosen academic year (two eldest children, KG to 12, up
+  to age 20, from 2017-18, monthly rates incl. hostel and divyang). The rules
+  live in `backend/app/data/cea_scheme.json`, not in code. Pick a family to get
+  the claim form pre-filled; edits are saved back to the record (old values kept
+  in history), and **Download PDF** writes the values onto the official scanned
+  form in `backend/CEA-Application/CEA 2026.pdf`.
+- **Voice notes**: shown as "coming soon" on the menu and Home. The voice-note
+  flow still works by dropping a recording on the **Assistant** (`/assistant`).
+
+> **Developers:** how the dashboard, upload, add-a-family and CEA claim pieces
+> work — the rules file, the eligibility engine, saving with history, and how
+> to move text on the PDF — is explained in
+> [`docs/dashboard-and-cea.md`](docs/dashboard-and-cea.md).
+>
+> **Explaining the system to someone?** Open
+> [`docs/architecture/index.html`](docs/architecture/index.html) in a browser
+> (double-click it; no server needed). It shows the layers, the core loop,
+> wireframes of each screen, the data flows and the main tables.
+
+Not built yet: talking points, the families list and
 search screens, the map, applications tracking, philanthropist matching,
 WhatsApp, login, and the real external services.
 
@@ -94,6 +124,7 @@ npm install
 | What you want | Command |
 |---|---|
 | Start the screen | `npm run dev` then open <http://localhost:3000> |
+| Change the name shown in the menu | copy `.env.example` to `.env.local` and edit `NEXT_PUBLIC_USER_NAME` |
 | Check it compiles | `npm run build` |
 
 ### Backend

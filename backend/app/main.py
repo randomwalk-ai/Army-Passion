@@ -1,15 +1,11 @@
-"""FastAPI application.
-
-Right now it only reports whether the backend and database are alive. The real
-endpoints come once we have agreed how the UI will ask for data.
-"""
+"""FastAPI application: the routers, and a health check."""
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.api import custom_fields, documents, families, imports, voice
+from app.api import cea, custom_fields, dashboard, documents, families, imports, voice
 from app.config import settings
 from app.db import get_session
 from app.models import Family, Scheme, Soldier
@@ -31,6 +27,8 @@ app.include_router(families.router)
 app.include_router(custom_fields.router)
 app.include_router(documents.router)
 app.include_router(voice.router)
+app.include_router(dashboard.router)
+app.include_router(cea.router)
 
 
 @app.get("/health")
