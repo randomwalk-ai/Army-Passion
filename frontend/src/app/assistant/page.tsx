@@ -1,16 +1,117 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Conversation, { type Entry } from "@/components/Conversation";
 import PromptBox from "@/components/PromptBox";
 import Sidebar from "@/components/Sidebar";
-import { uploadSheet } from "@/lib/api";
+import {
+  addChatMessage,
+  answerSuggestion,
+  askQuestion,
+  deleteChat,
+  listChats,
+  openChat,
+  startChat,
+  uploadSheet,
+  type AskAnswer,
+  type AskTurn,
+  type ChatSummary,
+  type SuggestionCard,
+} from "@/lib/api";
 import { classify } from "@/lib/files";
 
 export default function Home() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
+  // Earlier questions in this chat, so a follow-up ("list them") can be
+  // understood. Carries only what was typed and what the AI wrote back —
+  // never the rows that came back. Cleared by "New chat".
+  const history = useRef<AskTurn[]>([]);
+
+  // Saved chats. Each conversation keeps a promise of its chat id, so saves
+  // happen in order and the first answer creates the chat. "New chat" or
+  // opening an old chat swaps in a fresh conversation, so a late save from
+  // the previous one can never land in the wrong chat.
+  const [recent, setRecent] = useState<ChatSummary[]>([]);
+  const [activeChatId, setActiveChatId] = useState<number | null>(null);
+  const conversation = useRef<{ chatId: Promise<number | null> }>({
+    chatId: Promise.resolve(null),
+  });
+
+  const refreshRecent = useCallback(() => {
+    listChats()
+      .then(setRecent)
+      // An empty list is fine; the chat itself still works.
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshRecent();
+  }, [refreshRecent]);
+
+  function save(question: string, answer: AskAnswer) {
+    const current = conversation.current;
+    current.chatId = current.chatId.then(async (id) => {
+      try {
+        const chat = id
+          ? await addChatMessage(id, question, answer)
+          : await startChat(question, answer);
+        if (conversation.current === current) setActiveChatId(chat.id);
+        refreshRecent();
+        return chat.id;
+      } catch {
+        // Not saved, but the answer is still on screen; try again next time.
+        return id;
+      }
+    });
+  }
+
+  function remember(question: string, answer: AskAnswer) {
+    // An error is left out: there is nothing to follow up on.
+    if (answer.kind === "error") return;
+    history.current = [
+      ...history.current,
+      { question, title: answer.title, sql: answer.sql, reply: answer.message, tool: answer.tool },
+    ].slice(-10);
+  }
+
+  function newChat() {
+    setEntries([]);
+    history.current = [];
+    conversation.current = { chatId: Promise.resolve(null) };
+    setActiveChatId(null);
+    setSidebarOpen(false);
+  }
+
+  async function showChat(chatId: number) {
+    setSidebarOpen(false);
+    try {
+      const chat = await openChat(chatId);
+      history.current = [];
+      const restored: Entry[] = [];
+      for (const message of chat.messages) {
+        restored.push({ id: crypto.randomUUID(), kind: "text", text: message.question });
+        restored.push({ id: crypto.randomUUID(), kind: "answer", state: "ready", answer: message.answer });
+        remember(message.question, message.answer);
+      }
+      setEntries(restored);
+      conversation.current = { chatId: Promise.resolve(chat.id) };
+      setActiveChatId(chat.id);
+    } catch {
+      refreshRecent(); // it may have been deleted meanwhile
+    }
+  }
+
+  async function removeChat(chatId: number) {
+    try {
+      await deleteChat(chatId);
+    } catch {
+      // Already gone, or the server is down; the refresh shows the truth.
+    }
+    if (chatId === activeChatId) newChat();
+    refreshRecent();
+  }
 
   // Drag events fire for every child element, so count them instead of
   // toggling a flag — otherwise the overlay flickers as the pointer moves.
@@ -60,8 +161,46 @@ export default function Home() {
   }
 
 
+  function setAnswer(id: string, changes: Partial<Extract<Entry, { kind: "answer" }>>) {
+    setEntries((prev) =>
+      prev.map((entry) =>
+        entry.id === id && entry.kind === "answer" ? { ...entry, ...changes } : entry,
+      ),
+    );
+  }
+
+  /** Show the question, then fill in its answer when it arrives. */
+  function ask(text: string, fetchAnswer: () => Promise<AskAnswer>) {
+    const answerId = crypto.randomUUID();
+    setEntries((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), kind: "text", text },
+      { id: answerId, kind: "answer", state: "thinking" },
+    ]);
+    fetchAnswer()
+      .then((answer) => {
+        setAnswer(answerId, { state: "ready", answer });
+        // Remembered so a follow-up ("show their phones") makes sense.
+        remember(text, answer);
+        save(text, answer);
+      })
+      .catch((error: unknown) =>
+        setAnswer(answerId, {
+          state: "failed",
+          error:
+            error instanceof Error
+              ? error.message
+              : "I could not reach the server. Is the backend running?",
+        }),
+      );
+  }
+
   function addText(text: string) {
-    setEntries((prev) => [...prev, { id: crypto.randomUUID(), kind: "text", text }]);
+    ask(text, () => askQuestion(text, history.current));
+  }
+
+  function pickSuggestion(card: SuggestionCard) {
+    ask(card.text, () => answerSuggestion(card.key));
   }
 
   return (
@@ -69,10 +208,11 @@ export default function Home() {
       <Sidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
-        onNewChat={() => {
-          setEntries([]);
-          setSidebarOpen(false);
-        }}
+        onNewChat={newChat}
+        recent={recent}
+        activeChatId={activeChatId}
+        onOpenChat={showChat}
+        onDeleteChat={removeChat}
       />
 
       <main
@@ -117,6 +257,8 @@ export default function Home() {
           <Conversation
             entries={entries}
             onMappingConfirmed={(id) => update(id, { mappingConfirmed: true })}
+            onSuggestion={pickSuggestion}
+            onAsk={addText}
           />
         </div>
 

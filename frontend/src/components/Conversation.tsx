@@ -4,12 +4,26 @@ import ColumnMapping from "@/components/ColumnMapping";
 import DocumentUpload from "@/components/DocumentUpload";
 import ImportPreview from "@/components/ImportPreview";
 import VoiceNote from "@/components/VoiceNote";
-import type { UploadResult } from "@/lib/api";
+import { useEffect, useState } from "react";
+import {
+  exportAnswerExcel,
+  getSuggestions,
+  type AskAnswer,
+  type SuggestionCard,
+  type UploadResult,
+} from "@/lib/api";
 import { CURRENT_USER } from "@/lib/currentUser";
 import { formatSize, type DroppedKind } from "@/lib/files";
 
 export type Entry =
   | { id: string; kind: "text"; text: string }
+  | {
+      id: string;
+      kind: "answer";
+      state: "thinking" | "ready" | "failed";
+      answer?: AskAnswer;
+      error?: string;
+    }
   | {
       id: string;
       kind: "file";
@@ -28,6 +42,10 @@ export type Entry =
 type Props = {
   entries: Entry[];
   onMappingConfirmed: (entryId: string) => void;
+  onSuggestion: (suggestion: SuggestionCard) => void;
+  /** A clarifying option, a follow-up chip, or a clicked family row — ask it
+   *  as the next question, the same as if he had typed it. */
+  onAsk: (question: string) => void;
 };
 
 /** What the colonel is told when a file lands. Step 1 only announces it;
@@ -105,33 +123,62 @@ function FileIcon({ kind }: { kind: DroppedKind }) {
   );
 }
 
-function EmptyState() {
-  const suggestions = [
-    {
-      title: "Upload an Excel sheet",
-      body: "Drop the widows sheet here. I will show you what changes before anything is saved.",
-    },
-    {
-      title: "Upload a voice note",
-      body: "Drop a recording of a call. I will write out what was said and attach it to the family.",
-    },
-  ];
+/** Today's suggested questions, worked out from the data by the backend. */
+function EmptyState({ onSuggestion }: { onSuggestion: (s: SuggestionCard) => void }) {
+  const [cards, setCards] = useState<SuggestionCard[] | null>(null);
+
+  useEffect(() => {
+    getSuggestions()
+      .then(setCards)
+      // No suggestions is not worth an error; he can still type a question.
+      .catch(() => setCards([]));
+  }, []);
 
   return (
     <div className="mx-auto flex h-full w-full max-w-3xl flex-col justify-center px-4 py-10">
       <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
         Good to see you, {CURRENT_USER.name.split(" ")[0]}
       </h1>
-      <p className="mt-3 text-lg text-muted">What would you like to do today?</p>
+      <p className="mt-3 text-lg text-muted">
+        Ask me anything about the families, or try one of today&apos;s questions.
+      </p>
 
-      <div className="mt-8 grid gap-3 sm:grid-cols-2">
-        {suggestions.map((s) => (
-          <div key={s.title} className="rounded-2xl border border-border bg-surface p-5">
-            <h2 className="text-base font-semibold">{s.title}</h2>
-            <p className="mt-1.5 text-[15px] leading-relaxed text-muted">{s.body}</p>
-          </div>
-        ))}
-      </div>
+      {cards === null ? (
+        <p className="mt-8 text-[17px] text-muted">Looking at today&apos;s data...</p>
+      ) : (
+        cards.length > 0 && (
+          <ul className="mt-8 space-y-3">
+            {cards.map((card) => (
+              <li key={card.key}>
+                <button
+                  type="button"
+                  onClick={() => onSuggestion(card)}
+                  className="flex w-full items-center gap-4 rounded-2xl border border-border
+                    bg-surface px-5 py-4 text-left hover:bg-surface-2"
+                >
+                  <span className="flex-1 text-[17px] leading-snug">{card.text}</span>
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                    className="shrink-0 text-muted"
+                  >
+                    <path
+                      d="M9 6l6 6-6 6"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )
+      )}
     </div>
   );
 }
@@ -188,13 +235,216 @@ function FileReply({
   );
 }
 
-export default function Conversation({ entries, onMappingConfirmed }: Props) {
-  if (entries.length === 0) return <EmptyState />;
+function showCell(value: string | number | boolean | null): string {
+  if (value === null) return "—";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number") return value.toLocaleString("en-IN");
+  return value;
+}
+
+/** The reply to a typed question: a plain message, a table, a question back,
+ *  or (only for a real problem, e.g. the server being unreachable) an error. */
+/** Follow-up questions worth one click, chosen from what the table shows. */
+function followUps(answer: AskAnswer, single: boolean): string[] {
+  const has = (word: string) => answer.columns.some((c) => c.toLowerCase().includes(word));
+  const chips: string[] = [];
+  if (single) chips.push("List them");
+  else if (answer.rows.length > 0) {
+    if (!has("phone")) chips.push("Show their phone numbers");
+    if (!has("district")) chips.push("Show their district");
+    // Sorting by district only helps when there is more than one district.
+    const district = answer.columns.findIndex((c) => c.toLowerCase().includes("district"));
+    if (district >= 0 && new Set(answer.rows.map((r) => r[district])).size > 1) {
+      chips.push("Sort by district");
+    }
+  }
+  return chips;
+}
+
+/** Download what is on screen as an Excel file. */
+function DownloadExcel({ answer }: { answer: AskAnswer }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  async function download() {
+    setBusy(true);
+    setFailed(false);
+    try {
+      const blob = await exportAnswerExcel(answer);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${answer.title.replace(/[^\w .-]/g, "").trim() || "Answer"}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch {
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <button
+        type="button"
+        onClick={download}
+        disabled={busy}
+        className="rounded-full border border-border bg-surface px-4 py-2 text-[15px]
+          hover:bg-surface-2 disabled:opacity-60"
+      >
+        {busy ? "Preparing..." : "Download Excel"}
+      </button>
+      {failed && <span className="text-sm text-danger">Could not download. Try again.</span>}
+    </span>
+  );
+}
+
+function AnswerReply({
+  entry,
+  onAsk,
+}: {
+  entry: Extract<Entry, { kind: "answer" }>;
+  onAsk: (question: string) => void;
+}) {
+  if (entry.state === "thinking") {
+    return <p className="text-[17px] text-muted">Looking this up...</p>;
+  }
+  const answer = entry.answer;
+  // A real problem: the network failed, or the server itself reported one.
+  if (entry.state === "failed" || !answer || answer.kind === "error") {
+    return (
+      <div>
+        <p className="text-[17px] font-medium text-danger">Something went wrong</p>
+        <p className="mt-1 text-[17px] leading-relaxed text-muted">
+          {entry.error ?? answer?.error}
+        </p>
+      </div>
+    );
+  }
+
+  if (answer.kind === "message") {
+    return <p className="text-[17px] leading-relaxed">{answer.message}</p>;
+  }
+
+  if (answer.kind === "clarify") {
+    return (
+      <div className="space-y-3">
+        <p className="text-[17px] leading-relaxed">{answer.message}</p>
+        {answer.options.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {answer.options.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => onAsk(option)}
+                className="rounded-full border border-border bg-surface px-4 py-2 text-[15px]
+                  hover:bg-surface-2"
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // A single number ("how many...") reads better as a sentence than as a table.
+  const single = answer.rows.length === 1 && answer.columns.length === 1;
+  // A row with a family code opens that family when clicked.
+  const codeColumn = answer.columns.findIndex((c) => c.toLowerCase() === "family code");
+  const chips = followUps(answer, single);
+  return (
+    <div className="space-y-3">
+      <p className="text-[17px] font-medium">{answer.title}</p>
+      {single ? (
+        <p className="text-3xl font-semibold">{showCell(answer.rows[0][0])}</p>
+      ) : answer.rows.length === 0 ? (
+        <p className="text-[17px] text-muted">Nothing matched.</p>
+      ) : (
+        <>
+          <p className="text-[15px] text-muted">
+            {answer.truncated
+              ? `Showing the first ${answer.count} results. Ask a narrower question to see the rest.`
+              : `${answer.count} result${answer.count === 1 ? "" : "s"}`}
+          </p>
+          <div className="max-h-[60vh] overflow-auto rounded-2xl border border-border">
+            <table className="w-full border-collapse text-left text-[15px]">
+              <thead className="sticky top-0 bg-surface-2">
+                <tr>
+                  {answer.columns.map((column) => (
+                    <th key={column} className="whitespace-nowrap px-4 py-2.5 font-medium">
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {answer.rows.map((row, i) => {
+                  const code = codeColumn >= 0 ? row[codeColumn] : null;
+                  const open = typeof code === "string" && code ? () => onAsk(`details of ${code}`) : undefined;
+                  return (
+                    <tr
+                      key={i}
+                      onClick={open}
+                      title={open ? "Open this family" : undefined}
+                      className={`border-t border-border ${open ? "cursor-pointer hover:bg-surface-2" : ""}`}
+                    >
+                      {row.map((cell, j) => (
+                        <td key={j} className="whitespace-nowrap px-4 py-2.5">
+                          {showCell(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {codeColumn >= 0 && (
+            <p className="text-sm text-muted">Click a row to open that family.</p>
+          )}
+        </>
+      )}
+      {(answer.rows.length > 0 || chips.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {!single && answer.rows.length > 0 && <DownloadExcel answer={answer} />}
+          {chips.map((chip) => (
+            <button
+              key={chip}
+              type="button"
+              onClick={() => onAsk(chip)}
+              className="rounded-full border border-border bg-surface px-4 py-2 text-[15px]
+                text-muted hover:bg-surface-2 hover:text-text"
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Conversation({
+  entries,
+  onMappingConfirmed,
+  onSuggestion,
+  onAsk,
+}: Props) {
+  if (entries.length === 0) return <EmptyState onSuggestion={onSuggestion} />;
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
       {entries.map((entry) =>
-        entry.kind === "text" ? (
+        entry.kind === "answer" ? (
+          <div key={entry.id} className="max-w-full">
+            <AnswerReply entry={entry} onAsk={onAsk} />
+          </div>
+        ) : entry.kind === "text" ? (
           <div key={entry.id} className="flex justify-end">
             <p
               className="max-w-[85%] whitespace-pre-wrap rounded-3xl bg-surface-2 px-5 py-3
