@@ -1,5 +1,7 @@
 /** Talking to the backend. */
 
+// Fixed when the frontend is built. In production it is "" (empty): the
+// screens and the API share one address, and Caddy sends /api/* to the backend.
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 

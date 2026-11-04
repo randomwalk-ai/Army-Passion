@@ -1,7 +1,9 @@
 # Secrets
 .env
 *.env
+.env.*
 !.env.example
+!.env.production.example
 
 # Python
 __pycache__/
@@ -32,3 +34,6 @@ Thumbs.db
 
 # Personal Claude Code settings
 .claude/settings.local.json
+
+# Database backups made on the server
+backups/

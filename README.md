@@ -170,6 +170,17 @@ PostGIS version and the row counts:
 
 ---
 
+## Deploying
+
+Everything runs on one server with Docker (`docker-compose.prod.yml`), with
+Caddy in front for HTTPS and a shared site password (there is no login yet).
+Step-by-step guide: [`docs/deploy.md`](docs/deploy.md).
+
+```bash
+cp .env.production.example .env.production   # then fill it in
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+```
+
 ## Ports
 
 The database uses **5434**, not the usual 5432, because other projects on this

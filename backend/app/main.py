@@ -13,10 +13,10 @@ from app.models import Family, Scheme, Soldier
 app = FastAPI(title="Army Passion API", version="0.1.0")
 
 # The screen runs on a different port during development, so the browser
-# needs permission to call this API.
+# needs permission to call this API. Set CORS_ORIGINS in .env to change it.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

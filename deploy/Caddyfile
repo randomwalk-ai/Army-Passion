@@ -1,0 +1,40 @@
+# Caddy: HTTPS (free certificate from Let's Encrypt, renewed automatically),
+# one shared password for the whole site, and routing.
+#
+# Values come from .env.production (see docs/deploy.md).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# There is no login yet, so the whole site sits behind one password.
+	# BASIC_AUTH_HASH is base64 of a bcrypt hash: no "$" signs to escape.
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	# Documents can be up to 20 MB; leave room for the form around them.
+	request_body {
+		max_size 25MB
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+	handle /health* {
+		reverse_proxy backend:8000
+	}
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

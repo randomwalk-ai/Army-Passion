@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     app_env: str = "development"
     timezone: str = "Asia/Kolkata"
     secret_key: str = "change-me-in-production"
+    # Websites allowed to call this API from a browser, comma-separated.
+    # In production the screens and the API share one address, so this only
+    # matters during development (screens on :3000, API on :8010).
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     # Every external service is behind an interface; "mock" is the fake implementation.
     whatsapp_provider: str = "mock"
