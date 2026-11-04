@@ -45,6 +45,12 @@ const ACTIONS = [
     icon: "M12 5v14M5 12h14",
   },
   {
+    href: "/eligibility",
+    title: "Eligibility",
+    body: "See what every family can claim, scheme by scheme, and who needs a detail filled in first.",
+    icon: "M9 12l2 2 4-4M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z",
+  },
+  {
     href: "/cea",
     title: "CEA claims",
     body: "See who can claim Children Education Allowance, and print a filled-in claim form.",

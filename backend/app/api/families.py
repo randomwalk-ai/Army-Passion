@@ -75,9 +75,18 @@ class TableColumnOut(BaseModel):
     choices: list[str]
 
 
+class SchemeVerdictOut(BaseModel):
+    status: str
+    label: str
+    headline: str
+    amount: int
+
+
 class TableRowOut(BaseModel):
     family_id: int
     values: dict[str, str | int | None]
+    # One verdict per scheme, keyed by scheme code ("CEA").
+    eligibility: dict[str, SchemeVerdictOut] = {}
 
 
 class TableFilterOut(BaseModel):
@@ -140,8 +149,13 @@ def family_row(family_id: int, session: Session = Depends(get_session)) -> Table
     family = session.get(Family, family_id)
     if family is None or family.is_draft:
         raise HTTPException(404, "That family was not found.")
-    documents = family_table.supporting_counts(session, [family.id]).get(family.id, 0)
-    return TableRowOut(**family_table.row(family, family_table.columns(session), documents))
+    return _row_out(session, family)
+
+
+def _row_out(session: Session, family: Family) -> TableRowOut:
+    return TableRowOut(
+        **family_table.rows(session, [family], family_table.columns(session))[0]
+    )
 
 
 class CellIn(BaseModel):
@@ -172,11 +186,7 @@ def edit_cell(
         raise HTTPException(422, str(e)) from e
     session.commit()
     session.refresh(family)
-    documents = family_table.supporting_counts(session, [family.id]).get(family.id, 0)
-    return CellOut(
-        changed=changed,
-        row=TableRowOut(**family_table.row(family, family_table.columns(session), documents)),
-    )
+    return CellOut(changed=changed, row=_row_out(session, family))
 
 
 class NewChildIn(BaseModel):

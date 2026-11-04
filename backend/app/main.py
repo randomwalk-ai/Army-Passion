@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.api import cea, custom_fields, dashboard, documents, families, imports, voice
+from app.api import cea, custom_fields, dashboard, documents, eligibility, families, imports, voice
 from app.config import settings
 from app.db import get_session
 from app.models import Family, Scheme, Soldier
@@ -26,6 +26,7 @@ app.include_router(imports.router)
 app.include_router(families.router)
 app.include_router(custom_fields.router)
 app.include_router(documents.router)
+app.include_router(eligibility.router)
 app.include_router(voice.router)
 app.include_router(dashboard.router)
 app.include_router(cea.router)

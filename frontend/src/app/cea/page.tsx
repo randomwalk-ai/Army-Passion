@@ -5,14 +5,15 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import EligibilityBadge, { STATUS_LOOK, StatusIcon } from "@/components/EligibilityBadge";
 import { Notice, PageHeader, Spinner, buttonSecondary, errorText } from "@/components/ui";
 import { getCeaEligibility, rupees, type CeaEligibility, type CeaFamily, type CeaStatus } from "@/lib/api";
 
-const TABS: { status: CeaStatus; label: string; empty: string }[] = [
-  { status: "eligible", label: "Can claim", empty: "No family can claim for this year." },
-  { status: "needs_data", label: "Details missing", empty: "No family is missing details." },
-  { status: "eligible_later", label: "Can claim later", empty: "No family is waiting for a child to start school." },
-  { status: "not_eligible", label: "Cannot claim", empty: "Every family can claim something." },
+const TABS: { status: CeaStatus; label: string; hint: string; empty: string }[] = [
+  { status: "eligible", label: "Can claim", hint: "Fill the claim now", empty: "No family can claim for this year." },
+  { status: "needs_data", label: "Details missing", hint: "Fill a detail first", empty: "No family is missing details." },
+  { status: "eligible_later", label: "Can claim later", hint: "A child is too young", empty: "No family is waiting for a child to start school." },
+  { status: "not_eligible", label: "Cannot claim", hint: "Nothing to claim", empty: "Every family can claim something." },
 ];
 
 function FamilyRow({ family, year }: { family: CeaFamily; year: string }) {
@@ -20,7 +21,10 @@ function FamilyRow({ family, year }: { family: CeaFamily; year: string }) {
   return (
     <li className="flex flex-col gap-3 rounded-2xl border border-border bg-bg p-4 sm:flex-row sm:items-center sm:gap-4 sm:p-5">
       <div className="min-w-0 flex-1">
-        <p className="text-[18px] font-semibold">{family.nok_name}</p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <p className="text-[18px] font-semibold">{family.nok_name}</p>
+          <EligibilityBadge status={family.status} label={family.status_label} small />
+        </div>
         <p className="text-[15px] text-muted">
           {family.soldier_name && (
             <>
@@ -37,6 +41,9 @@ function FamilyRow({ family, year }: { family: CeaFamily; year: string }) {
                 key={`${c.member_id}-${i}`}
                 className="max-w-full rounded-xl bg-surface px-3 py-1.5 text-[15px]"
               >
+                <span className={`mr-1 inline-flex align-[-2px] ${STATUS_LOOK[c.status].text}`}>
+                  <StatusIcon status={c.status} />
+                </span>
                 <span className="font-medium">{c.name}</span>
                 {c.age !== null && <span className="text-muted">, {c.age}</span>}
                 <span className="text-muted"> — {c.status_label.toLowerCase()}</span>
@@ -104,6 +111,13 @@ export default function CeaPage() {
   const [showRules, setShowRules] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
+  // Opened from the Eligibility page with a status picked, e.g. /cea?status=needs_data
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("status");
+    const match = TABS.find((t) => t.status === wanted);
+    if (match) setTab(match.status);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -136,6 +150,7 @@ export default function CeaPage() {
     <AppShell>
       <PageHeader
         title="CEA claims"
+        back={{ href: "/eligibility", label: "All schemes" }}
         intro="Children Education Allowance pays for the schooling of the two eldest children of a soldier who died in service. Pick a family to fill in and print their claim."
       />
 
@@ -206,27 +221,33 @@ export default function CeaPage() {
 
           {/* ---------- tabs and search ---------- */}
           <div className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            {/* On a phone the tabs are one row you can swipe sideways. */}
-            <div
-              role="tablist"
-              aria-label="Show families who"
-              className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 sm:pb-0"
-            >
-              {TABS.map((t) => (
-                <button
-                  key={t.status}
-                  role="tab"
-                  aria-selected={tab === t.status}
-                  onClick={() => setTab(t.status)}
-                  className={`min-h-11 shrink-0 whitespace-nowrap rounded-full border px-4 text-[16px] transition ${
-                    tab === t.status
-                      ? "border-text bg-text font-semibold text-bg"
-                      : "border-border bg-bg text-muted hover:bg-surface-2 hover:text-text"
-                  }`}
-                >
-                  {t.label} <span className="tabular-nums">({data.counts[t.status]})</span>
-                </button>
-              ))}
+            {/* Four answers as four big tiles: two by two on a phone, one row when wide. */}
+            <div role="tablist" aria-label="Show families who" className="grid grid-cols-2 gap-2.5 lg:flex-1 lg:grid-cols-4">
+              {TABS.map((t) => {
+                const selected = tab === t.status;
+                return (
+                  <button
+                    key={t.status}
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => setTab(t.status)}
+                    className={`flex min-h-[5.5rem] flex-col items-start rounded-2xl border-2 px-3.5 py-3 text-left transition ${
+                      selected
+                        ? `${STATUS_LOOK[t.status].tile} border-current ${STATUS_LOOK[t.status].text}`
+                        : "border-border bg-bg hover:bg-surface-2"
+                    }`}
+                  >
+                    <span className={`flex items-center gap-1.5 text-[15px] font-semibold ${STATUS_LOOK[t.status].text}`}>
+                      <StatusIcon status={t.status} size={16} />
+                      {t.label}
+                    </span>
+                    <span className="mt-0.5 text-[28px] font-semibold leading-tight tabular-nums text-text">
+                      {data.counts[t.status]}
+                    </span>
+                    <span className="text-[13px] text-muted">{t.hint}</span>
+                  </button>
+                );
+              })}
             </div>
             <input
               type="search"
@@ -234,7 +255,7 @@ export default function CeaPage() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search a name, place or code"
               aria-label="Search families"
-              className="min-h-12 w-full rounded-full border border-border bg-bg px-5 text-[16px] outline-none focus:border-accent focus:ring-4 focus:ring-accent/15 lg:w-80"
+              className="min-h-12 w-full rounded-full border border-border bg-bg px-5 text-[16px] outline-none focus:border-accent focus:ring-4 focus:ring-accent/15 lg:w-72 lg:shrink-0"
             />
           </div>
 

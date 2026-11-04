@@ -13,6 +13,7 @@ branch. Read this before changing any of them.
 | `/families?filter=&family=` | `frontend/src/app/families/page.tsx` | The full families table (`family=ID` opens that family) |
 | `/upload` | `frontend/src/app/upload/page.tsx` | Excel import in 3 steps |
 | `/families/new` | `frontend/src/app/families/new/page.tsx` | Add one family by hand |
+| `/eligibility` | `frontend/src/app/eligibility/page.tsx` | Every scheme's four answers, and "check one family" |
 | `/cea` | `frontend/src/app/cea/page.tsx` | Who can claim CEA, for a chosen year |
 | `/cea/[familyId]?year=2025-26` | `frontend/src/app/cea/[familyId]/page.tsx` | The pre-filled claim, Save, Download PDF |
 | `/assistant` | `frontend/src/app/assistant/page.tsx` | The older chat screen (drop files, voice notes) — unchanged, just moved |
@@ -134,6 +135,27 @@ IFSC codes are stored identically. Rules:
 - History: a `__created__` row in `field_history` with source `officer_entry`,
   plus an `audit_log` row `family.create`.
 - Empty child rows on the form are ignored.
+
+---
+
+## Eligibility: the list of schemes
+
+`app/services/eligibility.py` holds `SCHEMES`. Each `Scheme` has a code,
+name, description, the period it checks, the page to act on it, and
+`check(session, families) -> {family_id: Verdict}`. Every scheme answers with
+the same four statuses (`eligible`, `needs_data`, `eligible_later`,
+`not_eligible`), plus a one-line `headline`, the `reasons` and an `amount`.
+
+The screens only read this list, so **adding a scheme = writing its `check`
+(rules in a data file, like `app/data/cea_scheme.json`, with unit tests) and
+appending a `Scheme(...)`**. It then appears automatically:
+
+- as a card on `/eligibility` (`GET /api/eligibility`)
+- as a column in the families table (`scheme.<CODE>`, with the verdict in `row.eligibility`)
+- in each family's panel (`GET /api/families/{id}/eligibility`)
+
+Shared look: `frontend/src/components/EligibilityBadge.tsx` (icon + words,
+never colour alone) and `FamilyEligibility.tsx`.
 
 ---
 

@@ -71,6 +71,11 @@ No real person, family, service number or bank account appears anywhere.
 - **Add a family** (`/families/new`): a simple form; only the two names and
   one document are needed. Uses the same cleaning rules as the Excel import, warns if the family
   looks like one already in the system, and records the officer as the source.
+- **Eligibility** (`/eligibility`): every family checked against every scheme,
+  with the same four answers for each (can claim · details missing · can claim
+  later · cannot claim). One card per scheme, a column per scheme in the
+  families table, and a "What they can claim" section in each family's panel.
+  CEA is the first scheme; to add one, see `backend/app/services/eligibility.py`.
 - **CEA claims** (`/cea`): every family checked against the Children Education
   Allowance rules for a chosen academic year (two eldest children, KG to 12, up
   to age 20, from 2017-18, monthly rates incl. hostel and divyang). The rules

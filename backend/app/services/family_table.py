@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models import AuditLog, CustomField, Document, Family, FieldHistory, Soldier
 from app.models.enums import ChangeSource, Language, Relation
+from app.services import eligibility
 from app.services.row_parser import (
     parse_date,
     parse_email,
@@ -30,6 +31,7 @@ from app.services.row_parser import (
 
 IST = ZoneInfo("Asia/Kolkata")
 EXTRA = "extra."
+SCHEME = "scheme."
 CHILD_RELATIONS = (Relation.son, Relation.daughter)
 
 
@@ -68,7 +70,8 @@ class Column:
     # "family" | "soldier" | "extra" | "computed"
     lives_on: str
     attr: str = ""
-    # How the screen shows the editor: text, phone, date, number, choice.
+    # How the screen shows the editor: text, phone, date, number, choice
+    # (and "status" for a scheme's eligibility, which is worked out, not typed).
     kind: str = "text"
     clean: Callable[[str], tuple[Any, str | None]] = _plain
     required: bool = False
@@ -124,11 +127,20 @@ FILTERS = {
 
 
 def columns(session: Session) -> list[Column]:
-    """The fixed columns, then any extra fields he has approved from his sheets."""
+    """The fixed columns with one per scheme after Documents, then any extra
+    fields he has approved from his sheets."""
     extras = session.scalars(
         select(CustomField).where(CustomField.is_active.is_(True)).order_by(CustomField.label)
     ).all()
-    return COLUMNS + [Column(f"{EXTRA}{f.key}", f.label, "extra", f.key) for f in extras]
+    schemes = [
+        Column(f"{SCHEME}{s.code}", s.short_name, "computed", s.code, kind="status")
+        for s in eligibility.SCHEMES
+    ]
+    at = next(i for i, c in enumerate(COLUMNS) if c.key == "documents") + 1
+    return (
+        COLUMNS[:at] + schemes + COLUMNS[at:]
+        + [Column(f"{EXTRA}{f.key}", f.label, "extra", f.key) for f in extras]
+    )
 
 
 def _show(value: Any) -> str | None:
@@ -176,11 +188,36 @@ def supporting_counts(session: Session, family_ids: list[int]) -> dict[int, int]
     )
 
 
-def row(family: Family, cols: list[Column], documents: int) -> dict[str, Any]:
+def row(
+    family: Family,
+    cols: list[Column],
+    documents: int,
+    verdicts: dict[str, eligibility.Verdict] | None = None,
+) -> dict[str, Any]:
     values = {c.key: _show(_read(c, family)) for c in cols if c.lives_on != "computed"}
     values["documents"] = documents
     values["children"] = sum(1 for m in family.members if m.relation in CHILD_RELATIONS)
-    return {"family_id": family.id, "values": values}
+    schemes = {}
+    for code, verdict in (verdicts or {}).items():
+        values[f"{SCHEME}{code}"] = verdict.status
+        scheme = eligibility.by_code(code)
+        schemes[code] = {
+            "status": verdict.status,
+            "label": scheme.status_labels[verdict.status] if scheme else verdict.status,
+            "headline": verdict.headline,
+            "amount": verdict.amount,
+        }
+    return {"family_id": family.id, "values": values, "eligibility": schemes}
+
+
+def rows(session: Session, families: list[Family], cols: list[Column]) -> list[dict[str, Any]]:
+    """Table rows with their document counts and every scheme's verdict."""
+    documents = supporting_counts(session, [f.id for f in families])
+    checked = eligibility.check_all(session, families)
+    return [
+        row(f, cols, documents.get(f.id, 0), {code: v[f.id] for code, v in checked.items()})
+        for f in families
+    ]
 
 
 def page(
@@ -253,10 +290,9 @@ def page(
         .offset((page_number - 1) * page_size)
         .limit(page_size)
     ).all()
-    documents = supporting_counts(session, [f.id for f in families])
     return Page(
         columns=cols,
-        rows=[row(f, cols, documents.get(f.id, 0)) for f in families],
+        rows=rows(session, list(families), cols),
         total=total,
         page=page_number,
         page_size=page_size,

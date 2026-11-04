@@ -353,14 +353,21 @@ export async function removeSupportingDocument(
 export type TableColumn = {
   key: string;
   label: string;
-  kind: "text" | "phone" | "date" | "number" | "choice";
+  kind: "text" | "phone" | "date" | "number" | "choice" | "status";
   editable: boolean;
   sortable: boolean;
   required: boolean;
   choices: string[];
 };
 
-export type TableRow = { family_id: number; values: Record<string, string | number | null> };
+export type SchemeVerdict = { status: EligibilityStatus; label: string; headline: string; amount: number };
+
+export type TableRow = {
+  family_id: number;
+  values: Record<string, string | number | null>;
+  /** One answer per scheme, keyed by scheme code ("CEA"). */
+  eligibility: Record<string, SchemeVerdict>;
+};
 
 export type FamiliesTable = {
   columns: TableColumn[];
@@ -615,9 +622,49 @@ export async function createFamily(body: {
   return response.json();
 }
 
+// --- eligibility, across every scheme ---------------------------------------
+
+/** The same four answers for every scheme. */
+export type EligibilityStatus = "eligible" | "needs_data" | "eligible_later" | "not_eligible";
+
+export type SchemeOverview = {
+  code: string;
+  name: string;
+  description: string;
+  period: string;
+  href: string;
+  families_checked: number;
+  counts: { status: EligibilityStatus; label: string; count: number }[];
+  amount_total: number;
+};
+
+export type FamilyScheme = {
+  code: string;
+  name: string;
+  period: string;
+  status: EligibilityStatus;
+  label: string;
+  headline: string;
+  reasons: string[];
+  amount: number;
+  href: string | null;
+};
+
+export async function getEligibilityOverview(): Promise<{ schemes: SchemeOverview[] }> {
+  const response = await fetch(`${API_BASE}/api/eligibility`);
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+export async function getFamilyEligibility(familyId: number): Promise<FamilyScheme[]> {
+  const response = await fetch(`${API_BASE}/api/families/${familyId}/eligibility`);
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
 // --- CEA claims -----------------------------------------------------------
 
-export type CeaStatus = "eligible" | "needs_data" | "eligible_later" | "not_eligible";
+export type CeaStatus = EligibilityStatus;
 
 export type CeaChildVerdict = {
   member_id: number | null;

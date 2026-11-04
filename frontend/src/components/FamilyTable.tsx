@@ -12,6 +12,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import EligibilityBadge from "@/components/EligibilityBadge";
+import FamilyEligibility from "@/components/FamilyEligibility";
 import { SupportingDocuments, MAX_DOCUMENTS } from "@/components/SupportingDocuments";
 import { Notice, buttonSecondary, errorText, formatDateTyping } from "@/components/ui";
 import {
@@ -211,7 +213,7 @@ function FamilyPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, open]);
 
-  const shown = columns.filter((c) => c.key !== NAME && c.key !== "documents");
+  const shown = columns.filter((c) => c.key !== NAME && c.key !== "documents" && c.kind !== "status");
 
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={String(row.values[NAME] ?? "Family")}>
@@ -251,7 +253,10 @@ function FamilyPanel({
             </Link>
           </div>
 
-          <h3 className="mb-2 text-[17px] font-semibold">Documents</h3>
+          <h3 className="mb-2 text-[17px] font-semibold">What they can claim</h3>
+          <FamilyEligibility familyId={row.family_id} />
+
+          <h3 className="mb-2 mt-7 text-[17px] font-semibold">Documents</h3>
           <SupportingDocuments familyId={row.family_id} onChange={(docs) => onDocuments(docs.length)} />
 
           <h3 className="mb-1 mt-7 text-[17px] font-semibold">Details</h3>
@@ -644,6 +649,27 @@ export default function FamilyTable({
                       ) : (
                         <span className="text-muted" aria-label="empty">—</span>
                       );
+
+                    if (c.kind === "status") {
+                      // "scheme.CEA" -> the CEA answer for this family.
+                      const answer = row.eligibility[c.key.replace(/^scheme\./, "")];
+                      return (
+                        <td key={c.key} className={`${cell} py-0`}>
+                          {answer ? (
+                            <button
+                              onClick={() => setPanel(row)}
+                              title={answer.headline}
+                              aria-label={`${c.label}: ${answer.label}. ${answer.headline}`}
+                              className="flex min-h-12 w-full items-center text-left"
+                            >
+                              <EligibilityBadge status={answer.status} label={answer.label} small />
+                            </button>
+                          ) : (
+                            <span className="text-muted">—</span>
+                          )}
+                        </td>
+                      );
+                    }
 
                     if (c.key === "documents") {
                       return (

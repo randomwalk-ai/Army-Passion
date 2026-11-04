@@ -29,6 +29,7 @@ export const NAV: NavItem[] = [
   { href: "/families", label: "All families", icon: "M4 5h16v14H4zM4 10h16M4 14.5h16M10 10v9" },
   { href: "/upload", label: "Upload a sheet", icon: "M12 16V4m0 0L7 9m5-5l5 5M5 20h14" },
   { href: "/families/new", label: "Add a family", icon: "M12 5v14M5 12h14" },
+  { href: "/eligibility", label: "Eligibility", icon: "M9 12l2 2 4-4M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" },
   { href: "/cea", label: "CEA claims", icon: "M4 8l8-4 8 4-8 4-8-4zm3 2v5c0 1.5 2.5 3 5 3s5-1.5 5-3v-5" },
   { href: "/voice", label: "Voice notes", icon: "M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3zM6 11a6 6 0 0 0 12 0M12 17v3", soon: true },
   { href: "/assistant", label: "Assistant", icon: "M5 5h14v10H9l-4 4V5z" },
