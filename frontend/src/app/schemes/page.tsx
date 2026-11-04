@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Eligibility: every family checked against every scheme.
+ * Schemes & grants: every family checked against every scheme and grant.
  *
  * The schemes come from the server's list (app/services/eligibility.py), so a
  * new scheme shows up here as one more card, with the same four answers.
@@ -134,7 +134,7 @@ function OneFamily() {
       <h2 id="one-family" className="text-[20px] font-semibold">
         Check one family
       </h2>
-      <p className="mt-1 text-[16px] text-muted">See what a family can claim under every scheme, and why.</p>
+      <p className="mt-1 text-[16px] text-muted">See what a family can claim under every scheme and grant, and why.</p>
 
       {picked ? (
         <div className="mt-4">
@@ -219,8 +219,8 @@ export default function EligibilityPage() {
   return (
     <AppShell>
       <PageHeader
-        title="Eligibility"
-        intro="Every family is checked against every scheme. Each scheme gives one of four answers, so you can see at a glance who can claim, who needs a detail filled in, and who will be able to later."
+        title="Schemes & grants"
+        intro="Every family is checked against every scheme and grant. Each one gives one of four answers, so you can see at a glance who can claim, who needs a detail filled in, and who will be able to later."
       />
 
       {/* ---------- what the four answers mean ---------- */}
@@ -241,7 +241,7 @@ export default function EligibilityPage() {
 
       {error && (
         <div className="mb-6 space-y-3">
-          <Notice tone="danger" title="Eligibility could not be loaded">
+          <Notice tone="danger" title="The schemes could not be loaded">
             {error}
           </Notice>
           <button onClick={() => setAttempt((n) => n + 1)} className={buttonSecondary}>
@@ -256,9 +256,9 @@ export default function EligibilityPage() {
 
         {schemes && (
           <div className="rounded-3xl border-2 border-dashed border-border px-5 py-6 text-center">
-            <p className="text-[17px] font-medium">More schemes will appear here</p>
+            <p className="text-[17px] font-medium">More schemes and grants will appear here</p>
             <p className="mt-1 text-[15px] text-muted">
-              Each new scheme gets its own card, a column in the families table, and a line in every family&rsquo;s details.
+              Each new one gets its own card, a column in the families table, and a line in every family&rsquo;s details.
             </p>
           </div>
         )}

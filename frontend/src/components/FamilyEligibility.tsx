@@ -26,7 +26,7 @@ export default function FamilyEligibility({ familyId }: { familyId: number }) {
 
   if (error) {
     return (
-      <Notice tone="danger" title="Eligibility could not be checked">
+      <Notice tone="danger" title="The schemes could not be checked">
         {error}
       </Notice>
     );
@@ -34,7 +34,7 @@ export default function FamilyEligibility({ familyId }: { familyId: number }) {
   if (!schemes) {
     return (
       <p className="py-3 text-[16px] text-muted" role="status">
-        Checking every scheme…
+        Checking every scheme and grant…
       </p>
     );
   }

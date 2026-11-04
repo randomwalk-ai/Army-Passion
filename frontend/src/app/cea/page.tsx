@@ -111,7 +111,7 @@ export default function CeaPage() {
   const [showRules, setShowRules] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
-  // Opened from the Eligibility page with a status picked, e.g. /cea?status=needs_data
+  // Opened from the Schemes & grants page with a status picked, e.g. /cea?status=needs_data
   useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get("status");
     const match = TABS.find((t) => t.status === wanted);
@@ -150,7 +150,7 @@ export default function CeaPage() {
     <AppShell>
       <PageHeader
         title="CEA claims"
-        back={{ href: "/eligibility", label: "All schemes" }}
+        back={{ href: "/schemes", label: "All schemes & grants" }}
         intro="Children Education Allowance pays for the schooling of the two eldest children of a soldier who died in service. Pick a family to fill in and print their claim."
       />
 
