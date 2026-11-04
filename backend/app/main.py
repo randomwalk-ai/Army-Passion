@@ -9,6 +9,11 @@ from app.api import ask, cea, chats, custom_fields, dashboard, documents, eligib
 from app.config import settings
 from app.db import get_session
 from app.models import Family, Scheme, Soldier
+from app.services.error_reporting import init_error_reporting, is_enabled
+
+# Before the app is built, so errors from the very start are reported too.
+# Does nothing unless SENTRY_DSN is set.
+init_error_reporting()
 
 app = FastAPI(title="Army Passion API", version="0.1.0")
 
@@ -50,3 +55,21 @@ def health_db(session: Session = Depends(get_session)) -> dict:
         "soldiers": session.scalar(select(func.count()).select_from(Soldier)),
         "mock_schemes": session.scalar(select(func.count()).select_from(Scheme)),
     }
+
+
+class SentryTestError(RuntimeError):
+    """Raised on purpose by the test button, to check Sentry receives errors."""
+
+
+@app.get("/api/debug/sentry")
+def sentry_status() -> dict:
+    """Whether error reporting is switched on (for the test page)."""
+    return {"enabled": is_enabled()}
+
+
+@app.post("/api/debug/sentry")
+def sentry_test() -> dict:
+    """Breaks on purpose so the error shows up on the Sentry dashboard."""
+    if not is_enabled():
+        return {"sent": False, "reason": "Sentry is not switched on here (SENTRY_DSN is empty)."}
+    raise SentryTestError("Test error from the backend, sent on purpose from /debug-sentry.")

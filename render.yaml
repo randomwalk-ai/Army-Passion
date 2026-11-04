@@ -42,6 +42,9 @@ services:
       # The free plan has 512 MB of memory: one worker.
       - key: WEB_CONCURRENCY
         value: "1"
+      # Error reporting: the DSN of the Sentry "FastAPI" project. Empty = off.
+      - key: SENTRY_DSN
+        sync: false
 
   - type: web
     name: army-passion-web
@@ -61,3 +64,7 @@ services:
         value: Demo User
       - key: NEXT_PUBLIC_USER_ROLE
         value: Administrator
+      # Error reporting: the DSN of the Sentry "Next.js" project. Empty = off.
+      # Baked in when the screens are built: after changing it, redeploy.
+      - key: NEXT_PUBLIC_SENTRY_DSN
+        sync: false

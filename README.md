@@ -199,6 +199,14 @@ Step-by-step guide: [`docs/deploy.md`](docs/deploy.md) (one DigitalOcean server)
 For a quick demo on Render (frontend + backend) and Supabase (database), see
 [`docs/deploy-render.md`](docs/deploy-render.md); the services are described in `render.yaml`.
 
+**Error reporting (Sentry).** Errors from the live site show on the
+[sentry.io](https://sentry.io) dashboard (Issues), with no emails. Off unless
+`SENTRY_DSN` (backend) and `NEXT_PUBLIC_SENTRY_DSN` (frontend, needs a
+redeploy) are set on Render, so nothing is ever sent from a developer's
+computer. No family details are sent: no request bodies, form values, query
+strings, IP addresses or screen recordings. To check it works, open
+`/debug-sentry` on the live site and press both buttons.
+
 ```bash
 cp .env.production.example .env.production   # then fill it in
 docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build

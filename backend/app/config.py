@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     s3_secret_key: str = ""
     s3_region: str = "blr1"
 
+    # Error reporting to sentry.io. Empty = switched off (the default, and on
+    # every developer's computer). Set only on the live site.
+    sentry_dsn: str = ""
+    # Shown on the Sentry dashboard; defaults to APP_ENV.
+    sentry_environment: str = ""
+
     # Used when llm_provider is not "mock".
     llm_api_key: str = ""
     # Model names change and old ones get retired; leave blank to use the
