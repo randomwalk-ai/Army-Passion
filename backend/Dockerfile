@@ -23,5 +23,7 @@ USER app
 
 EXPOSE 8000
 
-# Bring the database tables up to date, then start the API.
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips='*'"]
+# Bring the database tables up to date, then start the API. Render (and other
+# hosts) say which port to listen on in $PORT; on our own server it is 8000.
+# WEB_CONCURRENCY: 2 workers on a big server, 1 on a small free plan.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --proxy-headers --forwarded-allow-ips='*'"]

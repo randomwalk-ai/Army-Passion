@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/config.py -> backend/ -> project root
@@ -18,6 +19,16 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+psycopg://army:army_dev_password@localhost:5434/army_passion"
     )
+
+    @field_validator("database_url")
+    @classmethod
+    def _use_psycopg(cls, url: str) -> str:
+        """Hosted databases (Supabase, Render, Neon) hand out links starting
+        postgres:// or postgresql://; SQLAlchemy needs to be told which driver."""
+        for prefix in ("postgres://", "postgresql://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg://" + url[len(prefix):]
+        return url
     redis_url: str = "redis://localhost:6380/0"
 
     app_env: str = "development"

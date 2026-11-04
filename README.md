@@ -195,7 +195,9 @@ PostGIS version and the row counts:
 
 Everything runs on one server with Docker (`docker-compose.prod.yml`), with
 Caddy in front for HTTPS and a shared site password (there is no login yet).
-Step-by-step guide: [`docs/deploy.md`](docs/deploy.md).
+Step-by-step guide: [`docs/deploy.md`](docs/deploy.md) (one DigitalOcean server).
+For a quick demo on Render (frontend + backend) and Supabase (database), see
+[`docs/deploy-render.md`](docs/deploy-render.md); the services are described in `render.yaml`.
 
 ```bash
 cp .env.production.example .env.production   # then fill it in
