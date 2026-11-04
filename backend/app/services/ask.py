@@ -60,6 +60,9 @@ family_members (the widow, children, parents of a family)
   date_of_birth, gender, is_studying, education_level, is_married, marital_status,
   is_employed, has_disability, current_class, school_name, school_place, school_board,
   is_hostel, notes
+  The school class is in education_level, written like 'Class 10', 'Class 12',
+  'B.A. 1st year', 'ITI', 'Not studying'. current_class is mostly EMPTY (it is a
+  CEA-form field not filled in yet), so never filter on it.
 
 soldiers (the soldier who died)
   id, full_name, rank, service_number, regiment, unit, date_of_birth, date_of_enrolment,
@@ -190,8 +193,13 @@ TOOLS (reply with exactly one, as JSON):
    not a stored column, so writing SQL for it will be wrong. `year` is optional,
    e.g. "2025-26" or "2028"; leave it out for the most recently completed academic
    year. `name` is for ONE family ("is Meena Dagar eligible for CEA?"): the widow's
-   or soldier's name, or a family code; leave it out to list every child who can claim:
-   {{"tool": "cea", "year": "<academic year, or omit>", "name": "<one family, or omit>"}}
+   or soldier's name, or a family code; leave it out to list every child who can claim.
+   `classes` keeps only children in those school classes (numbers 0-12), highest
+   first; `limit` keeps that many families. For "which 10 families should I fill
+   first, focus on children going into 10th and 12th", use classes [9, 10, 11, 12]
+   (the classes before and of the board years) and limit 10:
+   {{"tool": "cea", "year": "<or omit>", "name": "<one family, or omit>",
+     "classes": [<class numbers, or omit>], "limit": <number of families, or omit>}}
 3. family — full details of ONE named family (its members and how to reach them),
    for "tell me about X", "X's family", "details of X", "who are X's children":
    {{"tool": "family", "name": "<the name or family code, as typed>"}}
@@ -272,7 +280,9 @@ class Plan:
     message: str | None = None
     options: list[str] = field(default_factory=list)
     year: str | None = None  # for "cea"
-    name: str | None = None  # for "family"
+    name: str | None = None  # for "family", or one family for "cea"
+    classes: list[int] = field(default_factory=list)  # for "cea": only these classes
+    limit: int | None = None  # for "cea": only this many families
 
 
 @dataclass
@@ -317,10 +327,17 @@ def parse_plan(raw: str) -> Plan:
         return Plan(tool="search", sql=str(data["sql"]), title=str(data.get("title") or "Answer"))
     if tool == "cea":
         year, name = data.get("year"), data.get("name")
+        classes = [
+            int(c) for c in data.get("classes") or []
+            if isinstance(c, (int, float, str)) and str(c).strip().isdigit()
+        ]
+        limit = data.get("limit")
         return Plan(
             tool="cea",
             year=str(year).strip() if year else None,
             name=str(name).strip() if name else None,
+            classes=classes,
+            limit=int(limit) if isinstance(limit, (int, float)) and limit > 0 else None,
         )
     if tool == "family" and data.get("name"):
         return Plan(tool="family", name=str(data["name"]))
@@ -576,7 +593,7 @@ def answer_question(
         if plan.tool == "cea":
             from app.services.tools import cea_tool  # local import: avoids a import cycle
 
-            return cea_tool(session, plan.year, today, plan.name)
+            return cea_tool(session, plan.year, today, plan.name, plan.classes, plan.limit)
         if plan.tool == "family":
             from app.services.tools import family_tool  # local import: avoids a import cycle
 
