@@ -5,6 +5,7 @@ Alembic's autogenerate relies on that, so keep every model listed here.
 
 from app.models.application import Application, ApplicationStageEvent
 from app.models.base import Base
+from app.models.chat import Chat, ChatMessage
 from app.models.custom_field import EXTRA_PREFIX, CustomField, slugify
 from app.models.document import Document
 from app.models.family import Family, FamilyMember
@@ -21,6 +22,8 @@ __all__ = [
     "ApplicationStageEvent",
     "AuditLog",
     "Base",
+    "Chat",
+    "ChatMessage",
     "CustomField",
     "EXTRA_PREFIX",
     "DataQualityIssue",

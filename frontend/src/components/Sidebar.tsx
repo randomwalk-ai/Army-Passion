@@ -4,7 +4,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import ThemeSwitch from "@/components/ThemeSwitch";
+import type { ChatSummary } from "@/lib/api";
 import { CURRENT_USER, initials } from "@/lib/currentUser";
 
 type Props = {
@@ -12,15 +14,12 @@ type Props = {
   onClose: () => void;
   /** Only the assistant has chats to start and look back on. */
   onNewChat?: () => void;
+  /** Saved chats, newest first. Shared by everyone (there is no login). */
+  recent?: ChatSummary[];
+  activeChatId?: number | null;
+  onOpenChat?: (chatId: number) => void;
+  onDeleteChat?: (chatId: number) => void;
 };
-
-// Placeholder history. Real sessions get stored once the backend is wired up.
-const RECENT = [
-  "Imported widows_sheet_oct.xlsx",
-  "Voice note — Kamlesh Devi, Rohtak",
-  "Voice note — new family, 9 Jat",
-  "Imported pension_update_sep.xlsx",
-];
 
 type NavItem = { href: string; label: string; icon: string; soon?: boolean };
 
@@ -41,7 +40,88 @@ function Icon({ d }: { d: string }) {
   );
 }
 
-export default function Sidebar({ open, onClose, onNewChat }: Props) {
+/** One saved chat in the Recent list, with a delete that asks first. */
+function RecentChat({
+  chat,
+  active,
+  onOpen,
+  onDelete,
+}: {
+  chat: ChatSummary;
+  active: boolean;
+  onOpen?: (chatId: number) => void;
+  onDelete?: (chatId: number) => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (confirming) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-surface-2 px-3 py-2 text-[14px]">
+        <span className="flex-1 truncate">Delete this chat?</span>
+        <button
+          type="button"
+          onClick={() => onDelete?.(chat.id)}
+          className="rounded-md px-2 py-1 font-medium text-danger hover:bg-bg"
+        >
+          Delete
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          className="rounded-md px-2 py-1 text-muted hover:bg-bg"
+        >
+          Cancel
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={`group flex items-center rounded-lg ${
+        active ? "bg-surface-2 text-text" : "text-muted hover:bg-surface-2 hover:text-text"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => onOpen?.(chat.id)}
+        className="min-w-0 flex-1 px-3 py-2.5 text-left"
+        title={`${chat.title} — ${chat.updated_at}`}
+      >
+        <span className="block truncate text-[15px]">{chat.title}</span>
+        <span className="block text-xs text-muted">{chat.updated_at}</span>
+      </button>
+      {onDelete && (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          aria-label={`Delete chat: ${chat.title}`}
+          className="mr-1 rounded-md p-2 text-muted opacity-100 hover:bg-bg hover:text-danger md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M5 7h14M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function Sidebar({
+  open,
+  onClose,
+  onNewChat,
+  recent = [],
+  activeChatId = null,
+  onOpenChat,
+  onDeleteChat,
+}: Props) {
   const pathname = usePathname();
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
@@ -144,19 +224,22 @@ export default function Sidebar({ open, onClose, onNewChat }: Props) {
               <h2 className="px-3 pb-2 pt-6 text-xs font-semibold uppercase tracking-wide text-muted">
                 Recent
               </h2>
-              <ul className="space-y-0.5">
-                {RECENT.map((item) => (
-                  <li key={item}>
-                    <button
-                      className="w-full truncate rounded-lg px-3 py-2.5 text-left text-[15px]
-                        text-muted hover:bg-surface-2 hover:text-text"
-                      title={item}
-                    >
-                      {item}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {recent.length === 0 ? (
+                <p className="px-3 text-[14px] text-muted">Your chats will appear here.</p>
+              ) : (
+                <ul className="space-y-0.5">
+                  {recent.map((chat) => (
+                    <li key={chat.id}>
+                      <RecentChat
+                        chat={chat}
+                        active={chat.id === activeChatId}
+                        onOpen={onOpenChat}
+                        onDelete={onDeleteChat}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </>
           )}
         </div>

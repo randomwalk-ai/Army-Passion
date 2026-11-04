@@ -642,3 +642,136 @@ export async function downloadCeaPdf(form: CeaForm): Promise<Blob> {
 export function rupees(amount: number): string {
   return `₹${amount.toLocaleString("en-IN")}`;
 }
+
+/** One earlier question in this chat, kept so a follow-up like "list them" can
+ *  be understood. Never carries the rows that came back — only what was
+ *  typed and what the AI itself wrote (a title, a search, a reply). */
+export type AskTurn = {
+  question: string;
+  title?: string | null;
+  sql?: string | null;
+  reply?: string | null;
+  /** Which of our own tools answered (CEA, a family), and for whom. */
+  tool?: string | null;
+};
+
+export type AskAnswer = {
+  /** "table" (rows), "message" (a plain reply), "clarify" (a question back,
+   *  with clickable options) or "error" (something went wrong). */
+  kind: "table" | "message" | "clarify" | "error";
+  title: string;
+  columns: string[];
+  rows: (string | number | boolean | null)[][];
+  count: number;
+  /** More rows matched than were sent; `count` is then the number shown. */
+  truncated: boolean;
+  /** The search that was run, kept to send back as history; not shown. */
+  sql: string | null;
+  /** The reply text, for kind "message" or "clarify". */
+  message: string | null;
+  /** Clickable choices, for kind "clarify". */
+  options: string[];
+  /** Set for kind "error". */
+  error: string | null;
+  /** Which of our own tools answered (CEA, a family); kept as history. */
+  tool?: string | null;
+};
+
+export async function askQuestion(question: string, history: AskTurn[] = []): Promise<AskAnswer> {
+  const response = await fetch(`${API_BASE}/api/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, history }),
+  });
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+export type SuggestionCard = {
+  key: string;
+  group: "general" | "specific";
+  text: string;
+  count: number | null;
+};
+
+/** Today's suggested questions, built from the data. */
+export async function getSuggestions(): Promise<SuggestionCard[]> {
+  const response = await fetch(`${API_BASE}/api/ask/suggestions`);
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+/** The answer to a suggested question (our own search, not the AI). */
+export async function answerSuggestion(key: string): Promise<AskAnswer> {
+  const response = await fetch(`${API_BASE}/api/ask/suggestions/${encodeURIComponent(key)}`, {
+    method: "POST",
+  });
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+/** The table already on screen, as an Excel file (no search is re-run). */
+export async function exportAnswerExcel(answer: {
+  title: string;
+  columns: string[];
+  rows: AskAnswer["rows"];
+}): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/api/ask/export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(answer),
+  });
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.blob();
+}
+
+// --- saved Assistant chats ---------------------------------------------------
+
+export type ChatSummary = { id: number; title: string; updated_at: string };
+export type SavedChat = {
+  id: number;
+  title: string;
+  messages: { question: string; answer: AskAnswer }[];
+};
+
+export async function listChats(): Promise<ChatSummary[]> {
+  const response = await fetch(`${API_BASE}/api/chats`);
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+/** Starts a new saved chat with its first question and answer. */
+export async function startChat(question: string, answer: AskAnswer): Promise<ChatSummary> {
+  const response = await fetch(`${API_BASE}/api/chats`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, answer }),
+  });
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+export async function addChatMessage(
+  chatId: number,
+  question: string,
+  answer: AskAnswer,
+): Promise<ChatSummary> {
+  const response = await fetch(`${API_BASE}/api/chats/${chatId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, answer }),
+  });
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+export async function openChat(chatId: number): Promise<SavedChat> {
+  const response = await fetch(`${API_BASE}/api/chats/${chatId}`);
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+export async function deleteChat(chatId: number): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/chats/${chatId}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(await failureMessage(response));
+}
