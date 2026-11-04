@@ -1,6 +1,7 @@
 """FastAPI application: the routers, and a health check."""
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -19,13 +20,35 @@ app = FastAPI(title="Army Passion API", version="0.1.0")
 
 # The screen runs on a different port during development, so the browser
 # needs permission to call this API. Set CORS_ORIGINS in .env to change it.
+ALLOWED_ORIGINS = {o.strip() for o in settings.cors_origins.split(",") if o.strip()}
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
+    allow_origins=sorted(ALLOWED_ORIGINS),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    """Any crash nobody planned for: a plain message the screens can show.
+
+    A crash reply is sent from outside the CORS layer, so without this the
+    browser hides it and the screens wrongly say the server could not be
+    reached. The error itself still goes to Sentry (when it is switched on).
+    """
+    response = JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong on the server. It has been reported."},
+    )
+    origin = request.headers.get("origin")
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Vary"] = "Origin"
+    return response
+
 
 app.include_router(imports.router)
 app.include_router(families.router)

@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from sentry_sdk.transport import Transport
 
 from app.config import settings
-from app.main import app
+from app.main import ALLOWED_ORIGINS, app
 from app.services import error_reporting
 from app.services.error_reporting import init_error_reporting, scrub
 
@@ -22,6 +22,20 @@ class Capture(Transport):
         for item in envelope.items:
             if item.type == "event":
                 self.events.append(item.payload.json)
+
+
+ORIGIN = sorted(ALLOWED_ORIGINS)[0]
+
+
+@pytest.fixture
+def crash_route():
+    """A route that crashes, for checking the reply to an unplanned error."""
+    path = "/api/test-only/crash"
+    if not any(getattr(r, "path", None) == path for r in app.router.routes):
+        def crash():
+            raise ValueError("an unplanned crash")
+        app.add_api_route(path, crash, methods=["GET"])
+    return path
 
 
 @pytest.fixture
@@ -70,11 +84,19 @@ def test_a_real_error_reaches_sentry_without_personal_data(monkeypatch, sentry_o
 
     client = TestClient(app, raise_server_exceptions=False)
     assert client.get("/api/debug/sentry").json() == {"enabled": True}
-    response = client.post("/api/debug/sentry?name=Paramjit", json={"phone": "+919876543210"})
+    response = client.post(
+        "/api/debug/sentry?name=Paramjit",
+        json={"phone": "+919876543210"},
+        headers={"Origin": ORIGIN},
+    )
     assert response.status_code == 500
+    # The screens can read the reply, so they say "something went wrong",
+    # not "could not reach the server".
+    assert response.headers["access-control-allow-origin"] == ORIGIN
+    assert "It has been reported" in response.json()["detail"]
     sentry_sdk.flush()
 
-    assert capture.events, "the test error should have been captured"
+    assert len(capture.events) == 1, "the error should be reported exactly once"
     event = capture.events[-1]
     assert event["exception"]["values"][-1]["type"] == "SentryTestError"
     text = str(event)
@@ -82,3 +104,21 @@ def test_a_real_error_reaches_sentry_without_personal_data(monkeypatch, sentry_o
     assert "user" not in event
     frames = event["exception"]["values"][-1]["stacktrace"]["frames"]
     assert all("vars" not in frame for frame in frames)
+
+
+def test_an_unplanned_crash_gets_a_readable_reply(crash_route, monkeypatch, sentry_off_afterwards):
+    """Even with Sentry off, a crash reply carries the CORS label and a plain message."""
+    monkeypatch.setattr(settings, "sentry_dsn", "")
+    init_error_reporting()
+    client = TestClient(app, raise_server_exceptions=False)
+
+    allowed = client.get(crash_route, headers={"Origin": ORIGIN})
+    assert allowed.status_code == 500
+    assert allowed.headers["access-control-allow-origin"] == ORIGIN
+    assert allowed.json() == {"detail": "Something went wrong on the server. It has been reported."}
+    # Nothing about the crash itself (a value, a name) is shown to the screen.
+    assert "unplanned" not in allowed.text
+
+    # A website we do not allow gets the reply without the label.
+    other = client.get(crash_route, headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in other.headers
