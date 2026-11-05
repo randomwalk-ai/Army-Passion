@@ -92,7 +92,7 @@ export default function Home() {
       const restored: Entry[] = [];
       for (const message of chat.messages) {
         restored.push({ id: crypto.randomUUID(), kind: "text", text: message.question });
-        restored.push({ id: crypto.randomUUID(), kind: "answer", state: "ready", answer: message.answer });
+        restored.push({ id: crypto.randomUUID(), kind: "answer", state: "ready", answer: message.answer, question: message.question });
         remember(message.question, message.answer);
       }
       setEntries(restored);
@@ -175,7 +175,7 @@ export default function Home() {
     setEntries((prev) => [
       ...prev,
       { id: crypto.randomUUID(), kind: "text", text },
-      { id: answerId, kind: "answer", state: "thinking" },
+      { id: answerId, kind: "answer", state: "thinking", question: text },
     ]);
     fetchAnswer()
       .then((answer) => {

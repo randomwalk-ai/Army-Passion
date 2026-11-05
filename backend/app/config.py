@@ -74,6 +74,10 @@ class Settings(BaseSettings):
     # default chosen in app/services/llm.py.
     llm_model: str = ""
     llm_timeout_seconds: float = 20.0
+    # Tried once when the usual model fails a chatbot question twice: bigger,
+    # slower, better at hard questions. The "-latest" alias keeps working when
+    # Google retires a named version.
+    llm_fallback_model: str = "gemini-flash-latest"
 
 
 settings = Settings()

@@ -26,9 +26,12 @@ router = APIRouter(prefix="/api/admin", tags=["admin"])
 EMPTY_THE_DATABASE = [
     # The colonel's and officers' postings are kept; the soldiers' go.
     "DELETE FROM postings WHERE soldier_id IS NOT NULL",
+    # child_facts / cea_by_year / derived_state are the chatbot's worked-out
+    # CEA results: they are rebuilt from the families, so they go too.
     """TRUNCATE application_stage_events, applications, chat_messages, chats,
                data_quality_issues, documents, family_scheme_eligibility,
                voice_uploads, interactions, philanthropist_matches, philanthropists,
+               child_facts, cea_by_year, derived_state,
                family_members, families, field_history, audit_log
                RESTART IDENTITY""",
     "DELETE FROM soldiers",

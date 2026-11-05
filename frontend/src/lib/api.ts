@@ -871,7 +871,25 @@ export type AskAnswer = {
   error: string | null;
   /** Which of our own tools answered (CEA, a family); kept as history. */
   tool?: string | null;
+  /** "I looked for: ..." in plain words, shown above the answer. */
+  understood?: string | null;
 };
+
+/** Thumbs up (+1) or down (-1) on an answer. Only how it was understood and
+ *  found is kept, never the rows; a wrong answer becomes a test later. */
+export async function sendFeedback(
+  question: string,
+  answer: AskAnswer,
+  rating: 1 | -1,
+  note?: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/ask/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question, answer, rating, note: note || null }),
+  });
+  if (!response.ok) throw new Error(await failureMessage(response));
+}
 
 export async function askQuestion(question: string, history: AskTurn[] = []): Promise<AskAnswer> {
   const response = await fetch(`${API_BASE}/api/ask`, {

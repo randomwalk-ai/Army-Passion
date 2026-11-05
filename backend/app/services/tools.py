@@ -187,6 +187,7 @@ def _cea_for_family(
         rows=rows,
         count=len(rows),
         tool=tool,
+        understood=f"CEA for {year.label} for each child of {family.primary_contact_name}'s family.",
     )
 
 
@@ -297,6 +298,7 @@ def family_tool(session: Session, name: str, today: date) -> Answer:
         kind="table",
         title=f"{family.primary_contact_name}'s family ({family.family_code}, {family.district})",
         tool=f"family details for {family.family_code} ({family.primary_contact_name})",
+        understood=f"The family of {family.primary_contact_name} ({family.family_code}, {family.district}).",
         columns=["Name", "Relation", "Date of birth", "Phone", "District", "Last contacted",
                  "Family code"],
         rows=rows,
