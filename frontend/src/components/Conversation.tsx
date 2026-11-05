@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import {
   exportAnswerExcel,
   getSuggestions,
+  sendFeedback,
   type AskAnswer,
   type SuggestionCard,
   type UploadResult,
@@ -24,6 +25,8 @@ export type Entry =
       state: "thinking" | "ready" | "failed";
       answer?: AskAnswer;
       error?: string;
+      /** The question this answers, for the thumbs up / down. */
+      question?: string;
     }
   | {
       id: string;
@@ -304,7 +307,110 @@ function DownloadExcel({ answer }: { answer: AskAnswer }) {
   );
 }
 
+/** 👍 / 👎 under an answer. A 👎 asks, optionally, what was wrong. */
+function Feedback({ question, answer }: { question: string; answer: AskAnswer }) {
+  const [state, setState] = useState<"idle" | "asking" | "sending" | "thanks" | "failed">("idle");
+  const [rating, setRating] = useState<1 | -1 | null>(null);
+  const [note, setNote] = useState("");
+
+  async function send(value: 1 | -1, withNote?: string) {
+    setRating(value);
+    setState("sending");
+    try {
+      await sendFeedback(question, answer, value, withNote);
+      setState("thanks");
+    } catch {
+      setState("failed");
+    }
+  }
+
+  if (state === "thanks") {
+    return (
+      <p className="text-[14px] text-muted">
+        {rating === 1 ? "Thanks, glad it helped." : "Thanks. This answer has been noted so it can be fixed."}
+      </p>
+    );
+  }
+
+  if (state === "asking") {
+    return (
+      <div className="space-y-2 rounded-2xl border border-border bg-surface p-3">
+        <label className="block text-[15px] font-medium" htmlFor={`note-${answer.title}-${question.length}`}>
+          What was wrong? <span className="font-normal text-muted">(optional)</span>
+        </label>
+        <textarea
+          id={`note-${answer.title}-${question.length}`}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          maxLength={1000}
+          placeholder="For example: it showed all families, I only wanted Punjab"
+          className="w-full resize-none rounded-xl border border-border bg-bg px-3 py-2 text-[15px] outline-none focus:border-accent"
+        />
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => send(-1, note.trim())}
+            className="rounded-full bg-accent px-4 py-2 text-[15px] font-semibold text-accent-fg"
+          >
+            Send
+          </button>
+          <button
+            type="button"
+            onClick={() => setState("idle")}
+            className="rounded-full px-4 py-2 text-[15px] text-muted hover:bg-surface-2"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const thumb =
+    "flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-surface-2 hover:text-text disabled:opacity-50";
+  return (
+    <div className="flex items-center gap-1">
+      <span className="mr-1 text-[14px] text-muted">Was this right?</span>
+      <button type="button" aria-label="Yes, this was right" title="Right" className={thumb}
+        disabled={state === "sending"} onClick={() => send(1)}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M7 11v9H4v-9h3zm0 0l4-7c1.5 0 2.5 1 2.2 2.5L12.7 10H19a2 2 0 0 1 2 2.3l-1.2 6A2 2 0 0 1 17.8 20H7"
+            stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <button type="button" aria-label="No, this was wrong" title="Wrong" className={thumb}
+        disabled={state === "sending"} onClick={() => setState("asking")}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M17 13V4h3v9h-3zm0 0l-4 7c-1.5 0-2.5-1-2.2-2.5l.5-3.5H5a2 2 0 0 1-2-2.3l1.2-6A2 2 0 0 1 6.2 4H17"
+            stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {state === "failed" && <span className="text-[14px] text-danger">Could not send. Try again.</span>}
+    </div>
+  );
+}
+
 function AnswerReply({
+  entry,
+  onAsk,
+}: {
+  entry: Extract<Entry, { kind: "answer" }>;
+  onAsk: (question: string) => void;
+}) {
+  const answer = entry.answer;
+  const body = <AnswerBody entry={entry} onAsk={onAsk} />;
+  // Feedback only on a real answer (not while thinking, not on an error).
+  if (entry.state !== "ready" || !answer || answer.kind === "error" || !entry.question) return body;
+  return (
+    <div className="space-y-2">
+      {body}
+      <Feedback question={entry.question} answer={answer} />
+    </div>
+  );
+}
+
+function AnswerBody({
   entry,
   onAsk,
 }: {
@@ -361,6 +467,19 @@ function AnswerReply({
   const chips = followUps(answer, single);
   return (
     <div className="space-y-3">
+      {answer.understood && (
+        // How the question was understood, so a misunderstanding shows at once.
+        <p className="flex items-start gap-2 rounded-xl bg-surface px-3 py-2 text-[15px] leading-snug text-muted">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="mt-0.5 shrink-0" aria-hidden="true">
+            <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="2" />
+            <path d="M16 16l4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+          <span>
+            <span className="font-medium text-text">I looked for: </span>
+            {answer.understood}
+          </span>
+        </p>
+      )}
       <p className="text-[17px] font-medium">{answer.title}</p>
       {single ? (
         <p className="text-3xl font-semibold">{showCell(answer.rows[0][0])}</p>

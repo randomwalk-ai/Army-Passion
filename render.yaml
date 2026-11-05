@@ -45,6 +45,10 @@ services:
       # Error reporting: the DSN of the Sentry "FastAPI" project. Empty = off.
       - key: SENTRY_DSN
         sync: false
+      # "true" shows the "Delete all data" button on Home (demo only). Set it to
+      # false to hide the button; no rebuild needed, just refresh the page.
+      - key: ALLOW_DATA_RESET
+        sync: false
 
   - type: web
     name: army-passion-web

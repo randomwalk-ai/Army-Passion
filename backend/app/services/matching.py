@@ -60,19 +60,38 @@ def name_similarity(a: str | None, b: str | None) -> float:
     return len(first & second) / max(len(first), len(second))
 
 
+def _overlap(first: set[str], second: set[str]) -> float:
+    """name_similarity for names already split into words."""
+    if not first or not second:
+        return 0.0
+    return len(first & second) / max(len(first), len(second))
+
+
 class FamilyIndex:
     """Loads the families once, so matching 60 rows does not mean 60 queries."""
 
     def __init__(self, session: Session) -> None:
+        # Children are loaded with the families (one trip, not one per family):
+        # the preview compares them and the import updates them.
         self.families: list[Family] = list(
             session.scalars(
-                select(Family).options(selectinload(Family.soldier))
+                select(Family).options(
+                    selectinload(Family.soldier), selectinload(Family.members)
+                )
             ).all()
         )
         self.by_service_number: dict[str, Family] = {}
         self.by_phone: dict[str, list[Family]] = {}
+        # Names split into words once, here, instead of once per sheet row.
+        self._widow_words: list[set[str]] = []
+        self._soldier_words: list[set[str]] = []
+        self._district: list[str] = []
+        # word -> positions of the families whose widow or soldier name has it.
+        # Two names can only be "close" if they share a word, so a row is only
+        # compared with families that share one.
+        self._by_word: dict[str, list[int]] = {}
 
-        for family in self.families:
+        for position, family in enumerate(self.families):
             soldier: Soldier | None = family.soldier
             if soldier and soldier.service_number:
                 self.by_service_number[simplify(soldier.service_number)] = family
@@ -80,6 +99,14 @@ class FamilyIndex:
                 digits = re.sub(r"[^\d]", "", family.primary_phone)[-10:]
                 if digits:
                     self.by_phone.setdefault(digits, []).append(family)
+
+            widow_words = set(simplify(family.primary_contact_name).split())
+            soldier_words = set(simplify(soldier.full_name).split()) if soldier else set()
+            self._widow_words.append(widow_words)
+            self._soldier_words.append(soldier_words)
+            self._district.append(simplify(family.district))
+            for word in widow_words | soldier_words:
+                self._by_word.setdefault(word, []).append(position)
 
     def find(self, row: ParsedRow) -> MatchResult:
         scores: dict[int, Candidate] = {}
@@ -117,15 +144,21 @@ class FamilyIndex:
         district = row.values.get("district")
         date_of_death = row.values.get("date_of_death")
 
-        for family in self.families:
+        row_widow = set(simplify(widow_name).split()) if widow_name else set()
+        row_soldier = set(simplify(soldier_name).split()) if soldier_name else set()
+        row_district = simplify(district) if district else ""
+        # Families sharing at least one word, in their original order (so ties
+        # rank exactly as before).
+        positions = sorted(
+            {p for word in row_widow | row_soldier for p in self._by_word.get(word, ())}
+        )
+
+        for position in positions:
+            family = self.families[position]
             soldier = family.soldier
 
-            widow_score = name_similarity(widow_name, family.primary_contact_name) if widow_name else 0
-            soldier_score = (
-                name_similarity(soldier_name, soldier.full_name)
-                if soldier_name and soldier
-                else 0
-            )
+            widow_score = _overlap(row_widow, self._widow_words[position])
+            soldier_score = _overlap(row_soldier, self._soldier_words[position]) if soldier else 0
             if widow_score < 0.6 and soldier_score < 0.6:
                 continue
 
@@ -139,7 +172,7 @@ class FamilyIndex:
             elif soldier_score >= 0.6:
                 add(family, 18, "Soldier's name is very close")
 
-            if district and simplify(district) == simplify(family.district):
+            if row_district and row_district == self._district[position]:
                 add(family, 15, f"Same district ({district})")
 
             if (

@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -42,62 +43,77 @@ MAX_QUESTION_LENGTH = 1000
 # What the LLM is told about the database. Written by hand rather than read
 # from the models, so we choose what it sees and can explain the odd names.
 SCHEMA = """
-families (one row per deceased soldier's family)
-  id, family_code (e.g. AP-2026-0006), soldier_id -> soldiers.id,
-  primary_contact_name (the widow / next of kin, NOK), nok_relationship (wife, mother...),
-  primary_phone, alternate_phone, email, whatsapp_opted_in (bool),
-  preferred_language (hindi, english, tamil, punjabi, malayalam, bengali, marathi),
-  address_line, village_or_town (holds the VILLAGE), town, tehsil, post_office,
-  district, state, pincode, gps_coordinates (text),
-  ppo_number, bank_account_number, bank_ifsc, bank_name, bank_branch,
-  co_unit_name, co_unit_phone, monthly_pension_amount (rupees), annual_income (rupees),
-  extra_fields (jsonb), is_draft (bool; drafts are half-known families, leave them out unless asked),
-  last_verified_on (date), last_contacted_on (date), notes
+families: one row per family of a soldier who died (drafts already left out)
+  family_code (e.g. AP-2026-0006), widow_name (the widow or next of kin, NOK),
+  relationship (wife, mother, father...), phone, other_phone, email,
+  language (hindi, english, tamil, punjabi, malayalam, bengali, marathi), whatsapp_opted_in,
+  village, town, tehsil, post_office, district, state, pincode,
+  bank_name, bank_branch, bank_account_number, bank_ifsc, has_bank_account (true/false),
+  ppo_number, monthly_pension, annual_income (rupees),
+  children_count, last_contacted_on (date), days_since_contact, last_verified_on,
+  soldier_name, soldier_rank, service_number, regiment, unit, date_of_death,
+  cause (battle casualty, physical casualty, accident, illness, suicide, natural causes, other),
+  cause_detail (free text, e.g. 'Two-wheeler road accident', 'IED blast', 'Cancer'),
+  co_unit_name, co_unit_phone, notes
 
-family_members (the widow, children, parents of a family)
-  id, family_id -> families.id, full_name,
-  relation (widow, son, daughter, father, mother, other_dependent),
-  date_of_birth, gender, is_studying, education_level, is_married, marital_status,
-  is_employed, has_disability, current_class, school_name, school_place, school_board,
-  is_hostel, notes
+children: one row per child (son, daughter, other dependent) of a family
+  child_name, relation (son, daughter, other dependent), gender (male, female),
+  date_of_birth, age (today), turns_18_on (date),
+  is_studying, education (as written, e.g. 'Class 12', 'B.A. 1st year', 'ITI', 'Not studying'),
+  class_number (0 = KG, 1-12 = school class, 13 = after school: college, ITI, diploma;
+                -1 = not studying; empty = not known),
+  school_name, is_hostel, has_disability, marital_status, is_married, is_employed,
+  family_code, widow_name, phone, district, state,
+  cea_year (the academic year that can be claimed now, e.g. '2025-26'),
+  cea_status ('eligible', 'not eligible', 'eligible later', 'details missing') for cea_year,
+  cea_reason (why, in plain words), cea_amount (rupees for that whole year, if eligible)
 
-soldiers (the soldier who died)
-  id, full_name, rank, service_number, regiment, unit, date_of_birth, date_of_enrolment,
-  date_of_death, cause_category (battle_casualty, physical_casualty, accident, illness,
-  suicide, natural_causes, other), cause_sub_category, place_of_death, district_of_death,
-  state_of_death, weather_at_death, duty_status (on_duty, on_leave, unknown), notes
-  cause_sub_category is free text, e.g. 'Two-wheeler road accident', 'Vehicle accident on duty',
-  'Electrocution', 'Avalanche', 'IED blast', 'Tuberculosis', 'Cancer', 'Stroke' (match with ILIKE).
-  weather_at_death values: Clear, Cloudy, Rain, Dense fog, Extreme cold, Thunderstorm,
-  Heat wave, Heavy snowfall.
-  There is no season column: work it out from the month of date_of_death
-  (winter = December, January, February).
+cea: Children Education Allowance for each child for several academic years
+  family_code, widow_name, district, state, child_name,
+  academic_year (e.g. '2024-25' ... '2028-29'), status ('eligible', 'not eligible',
+  'eligible later', 'details missing'), reason, amount (rupees for that year),
+  age_at_start (age when that year began), class_number
 
-postings (where a soldier, or one of our officers, served)
-  id, soldier_id -> soldiers.id (or null), user_id -> users.id (or null),
-  unit, formation, place, state, from_year, to_year
+members: everyone in a family (widow, children, parents)
+  name, relation (widow, son, daughter, father, mother, other dependent), gender,
+  date_of_birth, age, marital_status, is_married, is_employed, has_disability,
+  family_code, widow_name, phone, district, state
 
-users (the colonel and his officers)
-  id, full_name, rank, role (admin, colonel, officer, volunteer)
+applications: a family's application to a scheme
+  reference, family_code, widow_name, district, state, scheme, scheme_category,
+  stage (form filled, verified signed, submitted, received, money credited, rejected),
+  stage_since (date), days_in_stage, is_stuck (true/false: waiting longer than allowed),
+  amount_claimed, amount_credited, credited_on, ksb_dak_id, rejection_reason
 
-schemes (grants and schemes; all MOCK for now)
-  id, code, name, authority, category (education, medical, ...), benefit_amount (rupees),
-  is_recurring, is_active
+deaths: one row per soldier who died
+  family_code, soldier_name, rank, regiment, unit, service_number, date_of_death,
+  year, month (1-12), month_name, season (winter = Dec-Feb, summer = Mar-May,
+  monsoon = Jun-Sep, post-monsoon = Oct-Nov), cause (as in families), cause_detail,
+  place_of_death, district_of_death, state_of_death,
+  weather (Clear, Cloudy, Rain, Dense fog, Extreme cold, Thunderstorm, Heat wave, Heavy snowfall),
+  duty_status (on duty, on leave, unknown), family_district, family_state
 
-applications (a family's application to a scheme)
-  id, reference_code, family_id -> families.id, scheme_id -> schemes.id,
-  stage (form_filled, verified_signed, submitted, received, money_credited, rejected),
-  stage_changed_on (date), stuck_after_days (int; stuck when today - stage_changed_on
-  is more than this and stage is not money_credited or rejected),
-  ksb_dak_id, amount_claimed, amount_credited, credited_on, rejection_reason, notes
+calls: phone calls, voice notes and visits with a family
+  family_code, widow_name, district, type (phone call, voice note, whatsapp message,
+  field visit), date, language, summary, follow_up_needed, follow_up_note
 
-family_scheme_eligibility (which family can get which scheme)
-  family_id, scheme_id, status (eligible, not_eligible, eligible_later, needs_data),
-  becomes_eligible_on (date)
+postings: where soldiers, and the colonel and his officers, served
+  person_type ('soldier' or 'officer'), person_name, rank, unit, formation, place,
+  state, from_year, to_year, family_code (for a soldier)
 
-interactions (calls and voice notes with a family)
-  id, family_id, interaction_type (phone_call, voice_note, field_visit), occurred_at (timestamp), language,
-  summary_english, follow_up_needed (bool), follow_up_note
+schemes: grants and schemes (mostly MOCK for now)
+  name, code, category (education, medical, ...), authority, benefit_amount, is_recurring, is_active
+
+eligibility: which family can get which scheme (other than CEA)
+  family_code, widow_name, district, scheme,
+  status (eligible, not eligible, eligible later, needs data), becomes_eligible_on
+
+problems: data problems found (missing phone, wrong date, possible duplicate...)
+  family_code, widow_name, district, problem, severity (low, medium, high),
+  status (open, resolved, ignored), description
+
+documents: documents on record for a family
+  family_code, widow_name, district, person, document_type, status, is_supporting, added_on
 """.strip()
 
 
@@ -164,13 +180,18 @@ def build_prompt(
     history: list[Turn] | None = None,
     failed: tuple[str, str] | None = None,
 ) -> str:
-    """`failed` is (sql, database error) from a first attempt, so the model can fix it."""
+    """`failed` is (sql, what went wrong) from a first attempt, so the model can fix it.
+
+    What went wrong is a database error, or "it found no rows": never the rows.
+    """
     retry = (
         f"""
 
-YOUR PREVIOUS QUERY FAILED. Fix it.
+YOUR PREVIOUS QUERY NEEDS ANOTHER LOOK.
 Query: {failed[0]}
-Database error: {failed[1]}"""
+What happened: {failed[1]}
+Fix the query if a column, table or value was wrong. If it was right and there
+really is nothing to find, send the same query again."""
         if failed
         else ""
     )
@@ -179,80 +200,77 @@ It supports the families of soldiers who have died. You answer his questions abo
 the families by choosing ONE tool. You never see the data itself: when you search,
 the office's own software runs your query and shows him the rows.
 
-TABLES:
+TABLES (these are the only tables there are; use them exactly as named):
 {SCHEMA}
 
 TOOLS (reply with exactly one, as JSON):
-1. search — run one read-only PostgreSQL query over the tables above:
-   {{"tool": "search", "title": "<short line describing the answer>", "sql": "<the query>"}}
-2. cea — eligibility for the Children Education Allowance. ALWAYS use this for any
-   CEA question (who can claim, how many, how much, is X eligible); eligibility is
-   not a stored column, so writing SQL for it will be wrong. `year` is optional,
-   e.g. "2025-26" or "2028"; leave it out for the most recently completed academic
-   year. `name` is for ONE family ("is Meena Dagar eligible for CEA?"): the widow's
-   or soldier's name, or a family code; leave it out to list every child who can claim:
-   {{"tool": "cea", "year": "<academic year, or omit>", "name": "<one family, or omit>"}}
-3. family — full details of ONE named family (its members and how to reach them),
-   for "tell me about X", "X's family", "details of X", "who are X's children":
+1. search — one read-only PostgreSQL query over the tables above:
+   {{"tool": "search",
+     "understood": "<one plain sentence: what you looked for, e.g. 'Children who can claim CEA for 2025-26, in Class 9 to 12, the 10 families with the highest classes'>",
+     "title": "<short heading for the answer>",
+     "sql": "<the query>"}}
+2. family — full details of ONE named family, for "tell me about X", "X's family",
+   "details of X":
    {{"tool": "family", "name": "<the name or family code, as typed>"}}
-4. reply — a short plain-English message, for greetings, thanks, "what can you do?",
+3. reply — a short plain-English message, for greetings, thanks, "what can you do?",
    or when the data truly cannot answer (say what it does hold instead):
    {{"tool": "reply", "message": "<one to three short sentences>"}}
-5. clarify — ask back ONLY when there is no sensible reading of the question AT ALL
-   (see "WHEN TO GUESS INSTEAD OF ASKING" below), with 2 to 4 short choices he can
-   click (each a complete question):
+4. clarify — ask back ONLY when there is no sensible reading of the question AT ALL,
+   with 2 to 4 short choices he can click (each a complete question):
    {{"tool": "clarify", "message": "<the question back>", "options": ["...", "..."]}}
 
+CEA (Children Education Allowance):
+- Eligibility is already worked out: use children.cea_status / cea_amount for the year
+  that can be claimed now, and the cea table for any other academic year
+  ("by 2028" -> academic_year '2027-28' or '2028-29', say which in "understood").
+- "Is X eligible for CEA?" -> that family's children with their status and reason.
+- "Which 10 families should I fill first, children going into 10th and 12th" ->
+  eligible children with class_number IN (9, 10, 11, 12), highest class first,
+  only the first 10 families.
+
 WHEN TO GUESS INSTEAD OF ASKING:
-- Most short questions have an obvious everyday reading. Take it, and say what you
-  assumed in the title, rather than using clarify. Examples:
-  "names with A" -> widow / NOK names starting with A (note: "I took 'names' to
-  mean widow / NOK names").
-  "kids studying" -> children (son/daughter) with is_studying = true.
-  "families in Moga" -> families.district ILIKE 'Moga'.
-- Use clarify only when the question gives no topic to work with at all, e.g. a
-  single word like "list" or "show", or two genuinely different readings that
-  would give very different answers with no obvious winner.
+- Most short questions have an obvious everyday reading: take it, and say what you
+  assumed in "understood". "names with A" -> widow names STARTING with A
+  (widow_name ILIKE 'a%'), not names containing an a.
+  "kids studying" -> children with is_studying. "families in Moga" -> district 'Moga'.
+- Use clarify only when there is no topic at all ("list", "show") or two readings that
+  give very different answers with no obvious winner.
 
 NAME MATCHING:
-- A colonel may type a name with a different spelling, only a first name, or
-  missing capitals. Never require an exact match: split the name into words and
-  require each word to appear somewhere with ILIKE, e.g. for "ramesh kumar":
-  name ILIKE '%ramesh%' AND name ILIKE '%kumar%'.
+- Names may be spelled differently, given in part, or in any capitals. Split the name
+  into words and require each word with ILIKE: for "ramesh kumar",
+  widow_name ILIKE '%ramesh%' AND widow_name ILIKE '%kumar%'. A family can be named by
+  the widow, the soldier (soldier_name) or its family_code.
+- Place names too: district ILIKE '%moga%' (a misspelling like 'Mogaa' -> '%moga%').
 
 FOLLOW-UP QUESTIONS:
-- "how about X?", "and X?", "what about X?" mean: ask the MOST RECENT question
-  again, with the same tool, for X instead. E.g. after "how many kids does Meena
-  Dagar have?", "how about Archana Pawar?" is the same children search for Archana
-  Pawar; after "is Meena Dagar eligible for CEA", it is the cea tool with name
-  "Archana Pawar". Always follow the most recent question, not an older one.
-- "she", "her", "he", "this family" mean the family in the most recent question.
-- Read the conversation below. "them", "those", "these", "list them", "only in Punjab",
-  "show their phones", "sort by district" refer to the most recent search.
-- For a follow-up, start from that earlier query and change it: turn a count into a
-  list, add a filter, add columns, change the order. Keep its other conditions.
+- "how about X?", "and X?", "what about X?" mean: ask the MOST RECENT question again,
+  for X instead (same tool, same kind of search).
+- "she", "her", "this family" mean the family in the most recent question.
+- "them", "those", "list them", "only in Punjab", "show their phones", "sort by
+  district" change the most recent search: start from its query and change it
+  (count -> list, add a filter, add columns, change the order). Keep its other conditions.
 
-SEARCH RULES (tool 1 only):
-- Write a single SELECT (a WITH ... SELECT is fine). Never change data.
-- Today is {today.isoformat()}.
-- Leave out draft families (families.is_draft = true) unless asked about drafts.
-- Name matching should ignore capital letters (use ILIKE).
-- "Widow name" means families.primary_contact_name (no join needed).
-- Ages: a person turns N on date_of_birth + interval 'N years'. For example
-  "turning 18 in the next 3 months" is
-  date_of_birth + interval '18 years' BETWEEN current_date AND current_date + interval '3 months'.
-  Use current_date rather than writing today's date into the query.
-- Join each table only once unless you really need it twice.
-- Columns with a fixed list of values shown in brackets (relation, stage, language,
-  cause_category, duty_status, role, status, interaction_type) are enums: compare them
-  with = or IN using the exact lowercase value, never ILIKE.
-- Use IN (...) for a choice of values, e.g. relation IN ('son', 'daughter'), and put
-  brackets around any OR, so it cannot swallow the other conditions.
-- Give every output column a short readable English alias in double quotes,
-  e.g. AS "Widow name". Prefer names, district and family_code over ids.
-- For a "how many" question that also says "list", return the list; the screen
-  shows the count. For a pure "how many", return one row with the number.
-- Order lists sensibly (usually by name).
+SEARCH RULES:
+- A single SELECT (a WITH ... SELECT is fine). Never change data. Use only the tables
+  above, without a schema name in front of them.
+- Today is {today.isoformat()}. Use current_date in the query rather than a written date.
+- "turning 18 in the next 3 months": turns_18_on BETWEEN current_date AND current_date + interval '3 months'.
+- Text matching ignores capitals: ILIKE. The values listed in brackets above are the
+  exact words stored: compare with = or IN.
+- Put brackets around any OR so it cannot swallow the other conditions.
+- Give every column a short readable alias in double quotes, e.g. AS "Widow name".
+  Show names, district and family_code rather than bare numbers.
+- "how many ... list them" -> return the list (the screen shows the count).
+  A pure "how many" -> one row with the number.
+- Order lists sensibly (usually by name, or by the thing asked about).
+- Filter only on what he asked. Do not add conditions of your own (is_studying,
+  a status, "verified", a year) unless the question needs them: "children in class 12"
+  is class_number = 12 and nothing else; "death certificates" is every death certificate.
+- "how many X" counts X itself (documents, children, calls), not the families they
+  belong to, unless he asks how many families.
+- Never add LIMIT unless he asks for a number of results ("top 10", "first 5"): the
+  screen shows every row and says how many there are.
 
 CONVERSATION SO FAR:
 {_history_text(history or [])}
@@ -272,7 +290,11 @@ class Plan:
     message: str | None = None
     options: list[str] = field(default_factory=list)
     year: str | None = None  # for "cea"
-    name: str | None = None  # for "family"
+    name: str | None = None  # for "family", or one family for "cea"
+    classes: list[int] = field(default_factory=list)  # for "cea": only these classes
+    limit: int | None = None  # for "cea": only this many families
+    # One plain sentence saying what the search looks for, shown above the answer.
+    understood: str | None = None
 
 
 @dataclass
@@ -289,6 +311,8 @@ class Answer:
     message: str | None = None
     options: list[str] = field(default_factory=list)
     error: str | None = None
+    # "I looked for: ...", shown above the answer so a misunderstanding shows.
+    understood: str | None = None
     # Set when one of our own tools answered (CEA, a family); kept in the chat
     # history so a follow-up knows what was asked. Never contains rows.
     tool: str | None = None
@@ -299,6 +323,8 @@ def error(text_: str, sql: str | None = None) -> Answer:
 
 
 NOT_UNDERSTOOD = "I did not understand the reply from the AI. Please try again."
+UNREACHABLE = "I could not reach the AI just now. Please try again in a minute."
+BUSY_WAIT_SECONDS = 1.5
 
 
 def parse_plan(raw: str) -> Plan:
@@ -314,13 +340,26 @@ def parse_plan(raw: str) -> Plan:
 
     tool = str(data.get("tool") or ("search" if data.get("sql") else "reply"))
     if tool == "search" and data.get("sql"):
-        return Plan(tool="search", sql=str(data["sql"]), title=str(data.get("title") or "Answer"))
+        understood = data.get("understood")
+        return Plan(
+            tool="search",
+            sql=str(data["sql"]),
+            title=str(data.get("title") or "Answer"),
+            understood=str(understood).strip() if understood else None,
+        )
     if tool == "cea":
         year, name = data.get("year"), data.get("name")
+        classes = [
+            int(c) for c in data.get("classes") or []
+            if isinstance(c, (int, float, str)) and str(c).strip().isdigit()
+        ]
+        limit = data.get("limit")
         return Plan(
             tool="cea",
             year=str(year).strip() if year else None,
             name=str(name).strip() if name else None,
+            classes=classes,
+            limit=int(limit) if isinstance(limit, (int, float)) and limit > 0 else None,
         )
     if tool == "family" and data.get("name"):
         return Plan(tool="family", name=str(data["name"]))
@@ -357,12 +396,11 @@ class QuestionLLM(ABC):
 
 
 MOCK_LETTER = (
-    'SELECT f.primary_contact_name AS "Widow / NOK name", '
-    'f.district AS "District", f.state AS "State", '
-    'f.family_code AS "Family code" '
-    "FROM families f WHERE NOT f.is_draft "
-    "AND f.primary_contact_name ILIKE '{ch}%' "
-    "ORDER BY f.primary_contact_name"
+    'SELECT widow_name AS "Widow / NOK name", '
+    'district AS "District", state AS "State", '
+    'family_code AS "Family code" '
+    "FROM families WHERE widow_name ILIKE '{ch}%' "
+    "ORDER BY widow_name"
 )
 MOCK_COUNT = re.compile(r'^SELECT count\(\*\) AS "[^"]*" FROM \((.*)\) AS x$', re.S)
 
@@ -420,7 +458,7 @@ class MockQuestionLLM(QuestionLLM):
             return Plan(
                 tool="search",
                 title="Number of families",
-                sql='SELECT count(*) AS "Families" FROM families WHERE NOT is_draft',
+                sql='SELECT count(*) AS "Families" FROM families',
             )
         return Plan(
             tool="reply",
@@ -455,31 +493,42 @@ class GeminiQuestionLLM(QuestionLLM):
             "contents": [{"parts": [{"text": build_prompt(question, today, history, failed)}]}],
             "generationConfig": {"responseMimeType": "application/json", "temperature": 0},
         }
-        try:
-            response = httpx.post(
-                GEMINI_URL.format(model=self.model),
-                headers={"x-goog-api-key": self.api_key},
-                json=body,
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        except Exception as exc:  # noqa: BLE001 - shown to the colonel as a plain message
-            logger.warning("Gemini could not answer a question (%s).", self._safe_error(exc))
-            return Plan(tool="error", message="I could not reach the AI just now. Please try again.")
-        return parse_plan(raw)
+        # Gemini sometimes answers "busy" (503) or "too many requests" (429) for
+        # a moment; one short wait usually gets through.
+        for attempt in range(2):
+            try:
+                response = httpx.post(
+                    GEMINI_URL.format(model=self.model),
+                    headers={"x-goog-api-key": self.api_key},
+                    json=body,
+                    timeout=self.timeout,
+                )
+                if response.status_code in (429, 500, 502, 503, 504) and attempt == 0:
+                    time.sleep(BUSY_WAIT_SECONDS)
+                    continue
+                response.raise_for_status()
+                raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+                return parse_plan(raw)
+            except Exception as exc:  # noqa: BLE001 - shown to the colonel as a plain message
+                logger.warning("Gemini could not answer a question (%s).", self._safe_error(exc))
+                break
+        return Plan(tool="unreachable", message=UNREACHABLE)
 
 
-def get_question_llm() -> QuestionLLM | None:
+def get_question_llm(bigger: bool = False) -> QuestionLLM | None:
+    """The LLM that turns questions into searches.
+
+    `bigger` picks the larger Gemini model, tried once when the usual small
+    one has failed: slower, but better at a question it got wrong twice.
+    """
     provider = settings.llm_provider.lower()
     if provider in {"", "none", "off"}:
         return None
     if provider == "mock":
         return MockQuestionLLM()
     if provider == "gemini":
-        return GeminiQuestionLLM(
-            settings.llm_api_key, settings.llm_model, settings.llm_timeout_seconds
-        )
+        model = settings.llm_fallback_model if bigger else settings.llm_model
+        return GeminiQuestionLLM(settings.llm_api_key, model, settings.llm_timeout_seconds)
     raise NotImplementedError(f"LLM provider '{settings.llm_provider}' is not built yet.")
 
 
@@ -493,6 +542,14 @@ FORBIDDEN = re.compile(
     r"pg_sleep|pg_read_file|pg_read_binary_file|pg_ls_dir|lo_import|lo_export|dblink)\b",
     re.IGNORECASE,
 )
+# The chatbot searches only the simple views in the "ask" schema: while a
+# search runs nothing else is on the search path, so the only way to reach a
+# raw table is to name its schema (public.users), and system tables start with
+# pg_ or sit in information_schema. Those are refused.
+PUBLIC_SCHEMA = re.compile(r"\bpublic\s*\.", re.IGNORECASE)
+SYSTEM_NAMES = re.compile(r"\b(pg_[a-z0-9_]*|information_schema)\b", re.IGNORECASE)
+# The views live here; nothing else is on the search path while a search runs.
+SEARCH_SCHEMA = "ask"
 
 
 def check_sql(sql: str) -> str:
@@ -511,6 +568,11 @@ def check_sql(sql: str) -> str:
     bad = FORBIDDEN.search(bare)
     if bad:
         raise ValueError(f"The query used “{bad.group(1)}”, which is not allowed.")
+    system = SYSTEM_NAMES.search(bare)
+    if system:
+        raise ValueError(f"The query looked at “{system.group(1)}”, which is not allowed.")
+    if PUBLIC_SCHEMA.search(bare):
+        raise ValueError("The query reached outside the chatbot's tables (public.).")
     return cleaned
 
 
@@ -530,11 +592,16 @@ def _cell(value: Any) -> Any:
 
 
 def run_query(session: Session, sql: str) -> tuple[list[str], list[list[Any]], bool]:
-    """Run inside a read-only transaction that is always rolled back."""
+    """Run inside a read-only transaction that is always rolled back.
+
+    Only the "ask" views are on the search path, so a table name in the query
+    can only mean one of them, never a raw table.
+    """
     session.rollback()  # start a fresh transaction so the settings below apply to it
     try:
         session.execute(text("SET TRANSACTION READ ONLY"))
         session.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
+        session.execute(text(f"SET LOCAL search_path TO {SEARCH_SCHEMA}"))
         result = session.execute(text(f"SELECT * FROM ({sql}) AS answer LIMIT {MAX_ROWS + 1}"))
         columns = list(result.keys())
         rows = [[_cell(v) for v in row] for row in result.fetchall()]
@@ -542,6 +609,72 @@ def run_query(session: Session, sql: str) -> tuple[list[str], list[list[Any]], b
         session.rollback()
     truncated = len(rows) > MAX_ROWS
     return columns, rows[:MAX_ROWS], truncated
+
+
+# What the LLM is told when a search found nothing, so it can check its work.
+# Never the rows (there are none) and never any data.
+NO_ROWS = (
+    "It ran but found no rows. Check every filter: is the column right, and is the "
+    "value one that is really stored (see the values listed with each table)?"
+)
+
+
+def _attempt(
+    session: Session,
+    llm: QuestionLLM,
+    question: str,
+    today: date,
+    history: list[Turn],
+    failed: tuple[str, str] | None,
+) -> tuple[Answer | None, tuple[str, str] | None]:
+    """One try: ask the LLM, carry out its choice.
+
+    Returns (answer, None) when done, or (None, (sql, what went wrong)) when the
+    search failed and is worth another try.
+    """
+    plan = llm.plan(question, today, history, failed)
+    if plan.tool == "unreachable":
+        # Busy or down: let the next try (and then the bigger model) have a go.
+        return None, failed
+    if plan.tool == "error":
+        return error(plan.message or "Something went wrong."), None
+    if plan.tool == "reply":
+        return Answer(kind="message", message=plan.message), None
+    if plan.tool == "clarify":
+        return Answer(kind="clarify", message=plan.message, options=plan.options), None
+    if plan.tool == "cea":
+        from app.services.tools import cea_tool  # local import: avoids an import cycle
+
+        return cea_tool(session, plan.year, today, plan.name, plan.classes, plan.limit), None
+    if plan.tool == "family":
+        from app.services.tools import family_tool  # local import: avoids an import cycle
+
+        return family_tool(session, plan.name or "", today), None
+
+    try:
+        sql = check_sql(plan.sql or "")
+    except ValueError as exc:
+        logger.warning("Refused a generated query: %s | %s", exc, plan.sql)
+        return error(f"I could not run that safely. {exc}", plan.sql), None
+
+    try:
+        columns, rows, truncated = run_query(session, sql)
+    except DBAPIError as exc:
+        reason = str(exc.orig).strip().splitlines()[0] if exc.orig else str(exc)
+        logger.warning("A generated query failed: %s | %s", reason, sql)
+        return None, (sql, reason)
+
+    answer = Answer(
+        kind="table",
+        title=plan.title or "Answer",
+        understood=plan.understood,
+        columns=columns,
+        rows=rows,
+        count=len(rows),
+        truncated=truncated,
+        sql=sql,
+    )
+    return answer, None
 
 
 def answer_question(
@@ -560,50 +693,36 @@ def answer_question(
     if llm is None:
         return error("Questions need the AI, which is switched off (LLM_PROVIDER).")
 
+    # CEA results and class numbers are worked out by our own code; make sure
+    # they reflect the data as it is now (a no-op when nothing has changed).
+    from app.services.derived import ensure_fresh  # local import: avoids an import cycle
+
+    ensure_fresh(session)
+    session.commit()
+
     today = today or date.today()
     history = (history or [])[-MAX_HISTORY:]
+
+    # 1st try with the usual model. A search the database rejects, or one that
+    # finds nothing, is shown back to the LLM (the error or "no rows", never
+    # data) for a 2nd try. If that still fails, the bigger model has one go.
     failed: tuple[str, str] | None = None
-    # A first query that the database rejects (a typo, a wrong type) gets one
-    # retry, with the error shown to the LLM. The error names columns, not data.
-    for _attempt in range(2):
-        plan = llm.plan(question, today, history, failed)
-        if plan.tool == "error":
-            return error(plan.message or "Something went wrong.")
-        if plan.tool == "reply":
-            return Answer(kind="message", message=plan.message)
-        if plan.tool == "clarify":
-            return Answer(kind="clarify", message=plan.message, options=plan.options)
-        if plan.tool == "cea":
-            from app.services.tools import cea_tool  # local import: avoids a import cycle
-
-            return cea_tool(session, plan.year, today, plan.name)
-        if plan.tool == "family":
-            from app.services.tools import family_tool  # local import: avoids a import cycle
-
-            return family_tool(session, plan.name or "", today)
-
-        try:
-            sql = check_sql(plan.sql or "")
-        except ValueError as exc:
-            logger.warning("Refused a generated query: %s | %s", exc, plan.sql)
-            return error(f"I could not run that safely. {exc}", plan.sql)
-
-        try:
-            columns, rows, truncated = run_query(session, sql)
-            break
-        except DBAPIError as exc:
-            reason = str(exc.orig).strip().splitlines()[0] if exc.orig else str(exc)
-            logger.warning("A generated query failed: %s | %s", reason, sql)
-            failed = (sql, reason)
-    else:
-        return error("The search did not work. Try asking in a different way.", sql)
-
-    return Answer(
-        kind="table",
-        title=plan.title or "Answer",
-        columns=columns,
-        rows=rows,
-        count=len(rows),
-        truncated=truncated,
-        sql=sql,
-    )
+    empty: Answer | None = None
+    for model in (llm, llm, get_question_llm(bigger=True)):
+        answer, failed_now = _attempt(session, model, question, today, history, failed)
+        if answer is None:
+            failed = failed_now
+            continue
+        if answer.kind == "table" and answer.count == 0 and empty is None and answer.sql:
+            # Found nothing: worth one more look, in case a filter was wrong.
+            empty = answer
+            failed = (answer.sql, NO_ROWS)
+            continue
+        return answer
+    if empty is not None:
+        # Looked twice and there really is nothing (or the retry failed).
+        return empty
+    if failed is None:
+        # Every try was "could not reach the AI", none got as far as a search.
+        return error(UNREACHABLE)
+    return error("The search did not work. Try asking in a different way.", failed[0])

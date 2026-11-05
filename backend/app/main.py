@@ -3,10 +3,11 @@
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.api import ask, cea, chats, custom_fields, dashboard, documents, eligibility, families, imports, voice
+from app.api import admin, ask, cea, chats, custom_fields, dashboard, documents, eligibility, families, imports, voice
 from app.config import settings
 from app.db import get_session
 from app.models import Family, Scheme, Soldier
@@ -50,6 +51,10 @@ async def unexpected_error(request: Request, exc: Exception) -> JSONResponse:
     return response
 
 
+# Big replies (a 1,000-row preview is about 4 MB) are sent compressed, which
+# makes them roughly ten times smaller to download.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 app.include_router(imports.router)
 app.include_router(families.router)
 app.include_router(custom_fields.router)
@@ -60,6 +65,7 @@ app.include_router(dashboard.router)
 app.include_router(cea.router)
 app.include_router(ask.router)
 app.include_router(chats.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")

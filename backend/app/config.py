@@ -63,12 +63,21 @@ class Settings(BaseSettings):
     # Shown on the Sentry dashboard; defaults to APP_ENV.
     sentry_environment: str = ""
 
+    # Shows the "Delete all data" button on Home, which empties the database.
+    # Only for the demo site (set ALLOW_DATA_RESET=true on Render); off everywhere
+    # else, so it can never empty a database holding real families.
+    allow_data_reset: bool = False
+
     # Used when llm_provider is not "mock".
     llm_api_key: str = ""
     # Model names change and old ones get retired; leave blank to use the
     # default chosen in app/services/llm.py.
     llm_model: str = ""
     llm_timeout_seconds: float = 20.0
+    # Tried once when the usual model fails a chatbot question twice: bigger,
+    # slower, better at hard questions. The "-latest" alias keeps working when
+    # Google retires a named version.
+    llm_fallback_model: str = "gemini-flash-latest"
 
 
 settings = Settings()

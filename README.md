@@ -86,19 +86,22 @@ No real person, family, service number or bank account appears anywhere.
   to the end of the PDF** to get the claim and the family's supporting
   documents as one file.
 - **Assistant chatbot** (`/assistant`): ask a question in plain English and get
-  a table, a number, or a short reply. Gemini chooses a tool for each question —
-  a read-only database **search**, the **CEA** rules (our own engine, any
-  academic year), one **family's** details (spelling-tolerant name match), a
-  **reply**, or **asking back** with clickable choices when a question has no
-  sensible reading. It remembers the last 10 questions of a chat, so "list
-  them" or "only in Punjab" work. **Gemini never sees any family data**: only
-  the question, earlier questions, table names and the searches it wrote.
-  Searches run read-only with a 5-second limit and at most 1,000 rows.
-  Under a table: **Download Excel**, clickable rows (open that family), and
-  follow-up buttons. Chats are saved (no login, so shared by everyone) and
-  listed under **Recent**; every question goes to the audit log without its
-  rows. Check accuracy against real Gemini with
-  `.venv\Scripts\python.exe -m scripts.score_chatbot` (from `backend`).
+  a table, a number, or a short reply. Gemini writes a search over simple views
+  in the `ask` schema (families, children, cea, applications, deaths, calls,
+  postings, problems, documents...): plain column names, readable values, the
+  class as a number, and **CEA results already worked out** by our own rules
+  (`child_facts`, `cea_by_year`, rebuilt automatically when the data changes).
+  Searches see only those views, run read-only with a 5-second limit, and at
+  most 1,000 rows. Each answer starts with **"I looked for: ..."** so a
+  misunderstanding shows. A search that fails, or finds nothing, is shown back
+  to Gemini (the error or "no rows", never data) for one more try; a busy
+  Gemini is retried, then the bigger model has a go. It remembers the last 10
+  questions of a chat, offers Excel download, clickable family rows and
+  follow-up buttons, and every answer has **👍 / 👎**: wrong ones are listed at
+  `GET /api/ask/feedback?rating=-1` to become tests. **Gemini never sees any
+  family data**: only the question, earlier questions, table names and its own
+  searches. Check accuracy with `.venv\Scripts\python.exe -m scripts.score_chatbot`
+  (from `backend`, real Gemini, 54 questions).
 - **Suggested questions** (`/assistant`, empty screen): five questions built
   from today's data — three with a count ("38 applications stuck") and two that
   name a person ("Mita Roy hasn't been contacted since 07-06-2023"). Stuck
@@ -198,6 +201,16 @@ Caddy in front for HTTPS and a shared site password (there is no login yet).
 Step-by-step guide: [`docs/deploy.md`](docs/deploy.md) (one DigitalOcean server).
 For a quick demo on Render (frontend + backend) and Supabase (database), see
 [`docs/deploy-render.md`](docs/deploy-render.md); the services are described in `render.yaml`.
+
+**"Delete all data" (demo only).** With `ALLOW_DATA_RESET=true` on the API
+service in Render, Home shows a red **Delete all data** button (top right) that
+empties the database in one click: families, children, applications,
+documents, chats and history. Users and schemes are kept. Set it to `false`
+(or remove it) to hide the button; refresh Home after Render restarts.
+
+**Big sheets.** Uploading shows a progress card (sending, checking, saving)
+with a percentage and the time left. New families are saved in groups of 200,
+so a 1,000-row sheet takes well under a minute instead of about 8 minutes.
 
 **Error reporting (Sentry).** Errors from the live site show on the
 [sentry.io](https://sentry.io) dashboard (Issues), with no emails. Off unless

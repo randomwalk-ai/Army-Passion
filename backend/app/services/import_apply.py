@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -186,6 +186,48 @@ def next_family_code(session: Session) -> str:
     return f"{prefix}{number:04d}"
 
 
+def family_codes(session: Session):
+    """AP-2026-0151, AP-2026-0152, ... handed out one by one for an import.
+
+    Works out the highest code once, instead of re-reading every code for
+    each new family (that made a big import slow, and slower as it went).
+    """
+    year = date.today().year
+    prefix = f"AP-{year}-"
+    existing = set(
+        session.scalars(
+            select(Family.family_code).where(Family.family_code.like(f"{prefix}%"))
+        ).all()
+    )
+    highest = max(
+        (int(code.removeprefix(prefix)) for code in existing if code.removeprefix(prefix).isdigit()),
+        default=0,
+    )
+    number = highest
+    while True:
+        number += 1
+        code = f"{prefix}{number:04d}"
+        if code not in existing:  # never a code that is already taken
+            yield code
+
+
+# New families are written this many at a time: one trip to the database per
+# table for the whole group, instead of several trips for every family.
+SAVE_GROUP_SIZE = 200
+
+
+@dataclass
+class _NewFamily:
+    """A family built in memory, waiting for its group to be saved."""
+
+    family: Family
+    code: str
+    children: list[FamilyMember]
+    row_number: int
+    row_preview: Any
+    problems: list[Any]
+
+
 def _history(
     session: Session,
     entity_type: str,
@@ -245,24 +287,126 @@ def _raise_issue(
     )
 
 
+def _raise_row_problems(
+    session: Session,
+    family_id: int,
+    row_number: int,
+    problems: list[Any],
+    batch: ImportBatch,
+    now: datetime,
+    outcome: ImportOutcome,
+) -> None:
+    """Problems found while reading a row become "needs attention" items."""
+    for problem in problems:
+        _raise_issue(
+            session,
+            family_id,
+            "family",
+            family_id,
+            problem.code,
+            problem.severity,
+            f"Row {row_number}: {problem.message}",
+            {
+                "import_id": batch.id,
+                "row_number": row_number,
+                "field": problem.field_name,
+                "raw_value": problem.raw_value,
+            },
+            now,
+        )
+        outcome.issues_raised += 1
+
+
+def _save_group(
+    session: Session,
+    waiting: list[_NewFamily],
+    batch: ImportBatch,
+    now: datetime,
+    outcome: ImportOutcome,
+) -> None:
+    """Save a group of new families in one go, then record their history.
+
+    The history and "needs attention" rows need each family's id, which only
+    exists once the family is saved, so they are added straight after.
+    """
+    if not waiting:
+        return
+    session.flush()
+    for item in waiting:
+        family = item.family
+        for member in item.children:
+            _history(
+                session, "family_member", member.id, "__created__",
+                None, member.full_name, batch, now,
+            )
+        _history(session, "family", family.id, "__created__", None, item.code, batch, now)
+
+        # It might be the same family under a different spelling: say so.
+        preview = item.row_preview
+        if preview.action == RowAction.needs_decision:
+            _raise_issue(
+                session,
+                family.id,
+                "family",
+                family.id,
+                IssueCode.possible_duplicate,
+                IssueSeverity.high,
+                (
+                    f"Row {item.row_number} may be the same family as "
+                    f"{preview.matched_family_code}. Added as a new record, "
+                    "needs an officer to decide."
+                ),
+                {
+                    "other_family_id": preview.matched_family_id,
+                    "other_family_code": preview.matched_family_code,
+                    "score": preview.match_score,
+                    "reasons": preview.match_reasons,
+                    "import_id": batch.id,
+                    "row_number": item.row_number,
+                },
+                now,
+            )
+            outcome.issues_raised += 1
+
+        _raise_row_problems(
+            session, family.id, item.row_number, item.problems, batch, now, outcome
+        )
+    session.flush()
+    waiting.clear()
+
+
 def apply_import(
     session: Session,
     batch: ImportBatch,
     sheet: SheetData,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> ImportOutcome:
-    """Write the sheet. Call only after the colonel has seen the preview."""
+    """Write the sheet. Call only after the colonel has seen the preview.
+
+    `on_progress(stage, done, total)` is called as it goes, so the screen can
+    show a progress bar: first "checking" (the rows against saved families),
+    then "saving".
+    """
     mapping = batch.confirmed_mapping
     overrides = batch.row_overrides or {}
     added_fields = batch.added_fields or {}
-    preview = build_preview(session, sheet, mapping, overrides, added_fields)
+    preview = build_preview(
+        session, sheet, mapping, overrides, added_fields, on_progress=on_progress
+    )
     outcome = ImportOutcome()
     now = datetime.now(IST)
     # Extra fields actually used by this sheet, so their usage count is honest.
     used_extra_keys: set[str] = set()
+    # New families wait here until a group is full, then are saved together.
+    waiting: list[_NewFamily] = []
+    codes = family_codes(session)
+    total = len(sheet.rows)
 
     previews_by_row = {p.row_number: p for p in preview.rows}
 
     for position, raw_row in enumerate(sheet.rows):
+        if on_progress:
+            on_progress("saving", position + 1, total)
         row_number = (sheet.header_row_number or 1) + position + 1
         row_preview = previews_by_row.get(row_number)
         if row_preview is None:
@@ -361,6 +505,8 @@ def apply_import(
 
         # --- a family we have not seen before ---
         elif row_preview.action in (RowAction.create, RowAction.needs_decision):
+            # Built in memory and saved with its group (see _save_group), so a
+            # big sheet does not need several database trips per family.
             # Every mapped soldier and family field is copied across, so a
             # field added to the mapping is saved without touching this code.
             soldier = Soldier(
@@ -373,13 +519,11 @@ def apply_import(
             # Older sheets give only one unit column; use it for both.
             if not soldier.regiment:
                 soldier.regiment = soldier.unit
-            session.add(soldier)
-            session.flush()
 
-            code = next_family_code(session)
+            code = next(codes)
             family = Family(
                 family_code=code,
-                soldier_id=soldier.id,
+                soldier=soldier,
                 primary_contact_name=parsed.values.get("widow_name")
                 or soldier.full_name,
                 extra_fields=dict(parsed.extra_fields),
@@ -390,78 +534,44 @@ def apply_import(
                 if value not in (None, "") and key != "widow_name":
                     setattr(family, column, value)
             family.location = point_from_gps(family.gps_coordinates)
-            session.add(family)
-            session.flush()
 
             if parsed.values.get("widow_name"):
                 relation = relation_from_text(family.nok_relationship)
-                session.add(
+                family.members.append(
                     FamilyMember(
-                        family_id=family.id,
                         full_name=parsed.values["widow_name"],
                         relation=relation,
                         gender="female" if relation in (Relation.widow, Relation.mother) else None,
                     )
                 )
-            session.flush()
-            _apply_children(session, family, parsed, batch, now)
+            # A family new to us has no children on record yet, so every child
+            # in the row is a new record (as _apply_children would decide).
+            children = [new_member(None, child) for child in sheet_children(parsed.values)]
+            family.members.extend(children)
+            session.add(family)
 
-            _history(
-                session, "family", family.id, "__created__", None, code, batch, now
-            )
             outcome.created += 1
             outcome.new_family_codes.append(code)
             used_extra_keys.update(k for k, v in parsed.extra_fields.items() if v)
-            target_family_id = family.id
-
-            # It might be the same family under a different spelling â€” say so.
             if row_preview.action == RowAction.needs_decision:
                 outcome.needs_decision += 1
-                _raise_issue(
-                    session,
-                    family.id,
-                    "family",
-                    family.id,
-                    IssueCode.possible_duplicate,
-                    IssueSeverity.high,
-                    (
-                        f"Row {row_number} may be the same family as "
-                        f"{row_preview.matched_family_code}. Added as a new record â€” "
-                        "needs an officer to decide."
-                    ),
-                    {
-                        "other_family_id": row_preview.matched_family_id,
-                        "other_family_code": row_preview.matched_family_code,
-                        "score": row_preview.match_score,
-                        "reasons": row_preview.match_reasons,
-                        "import_id": batch.id,
-                        "row_number": row_number,
-                    },
-                    now,
-                )
-                outcome.issues_raised += 1
+
+            waiting.append(_NewFamily(
+                family=family, code=code, children=children, row_number=row_number,
+                row_preview=row_preview, problems=list(parsed.problems),
+            ))
+            if len(waiting) >= SAVE_GROUP_SIZE:
+                _save_group(session, waiting, batch, now, outcome)
+            continue
         else:
             continue
 
-        # Problems found while reading the row become "needs attention" items.
-        for problem in parsed.problems:
-            _raise_issue(
-                session,
-                target_family_id,
-                "family",
-                target_family_id,
-                problem.code,
-                problem.severity,
-                f"Row {row_number}: {problem.message}",
-                {
-                    "import_id": batch.id,
-                    "row_number": row_number,
-                    "field": problem.field_name,
-                    "raw_value": problem.raw_value,
-                },
-                now,
-            )
-            outcome.issues_raised += 1
+        _raise_row_problems(
+            session, target_family_id, row_number, parsed.problems, batch, now, outcome
+        )
+
+    # The last group of new families.
+    _save_group(session, waiting, batch, now, outcome)
 
     # Record which extra fields this sheet actually used.
     if used_extra_keys:

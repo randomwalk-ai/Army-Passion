@@ -7,9 +7,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
+from app.models import AnswerFeedback
 from app.services.ask import MAX_HISTORY, Answer, Turn, answer_question
 from app.services.export import answer_filename, build_answer_workbook
 from app.services.suggestions import answer_suggestion, todays_suggestions
@@ -48,6 +50,8 @@ class AskResponse(BaseModel):
     error: str | None
     # Which of our own tools answered (CEA, a family); sent back as history.
     tool: str | None = None
+    # "I looked for: ...", shown above the answer.
+    understood: str | None = None
 
 
 class SuggestionOut(BaseModel):
@@ -94,4 +98,55 @@ def export(body: ExportRequest) -> Response:
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{answer_filename(body.title)}"'},
+    )
+
+
+# --- thumbs up / down ------------------------------------------------------
+
+# What is kept about the answer: how it was understood and found. Never rows.
+FEEDBACK_KEEPS = ("kind", "title", "understood", "sql", "tool", "count", "message", "error")
+
+
+class FeedbackIn(BaseModel):
+    question: str = Field(min_length=1, max_length=1000)
+    rating: int = Field(description="+1 (right) or -1 (wrong)")
+    note: str | None = Field(default=None, max_length=1000)
+    answer: dict[str, Any]
+
+
+class FeedbackOut(BaseModel):
+    id: int
+    question: str
+    rating: int
+    note: str | None
+    answer: dict[str, Any]
+    created_at: str  # DD-MM-YYYY HH:MM
+
+
+@router.post("/feedback", response_model=FeedbackOut)
+def give_feedback(body: FeedbackIn, session: Session = Depends(get_session)) -> FeedbackOut:
+    if body.rating not in (1, -1):
+        raise HTTPException(400, "Rating must be 1 (right) or -1 (wrong).")
+    kept = {key: body.answer.get(key) for key in FEEDBACK_KEEPS if key in body.answer}
+    row = AnswerFeedback(question=body.question, rating=body.rating, note=body.note, answer=kept)
+    session.add(row)
+    session.commit()
+    return _feedback_out(row)
+
+
+@router.get("/feedback", response_model=list[FeedbackOut])
+def list_feedback(
+    rating: int | None = None, session: Session = Depends(get_session)
+) -> list[FeedbackOut]:
+    """The latest feedback; ?rating=-1 lists only the answers marked wrong."""
+    query = select(AnswerFeedback).order_by(AnswerFeedback.created_at.desc()).limit(200)
+    if rating in (1, -1):
+        query = query.where(AnswerFeedback.rating == rating)
+    return [_feedback_out(row) for row in session.scalars(query).all()]
+
+
+def _feedback_out(row: AnswerFeedback) -> FeedbackOut:
+    return FeedbackOut(
+        id=row.id, question=row.question, rating=row.rating, note=row.note,
+        answer=row.answer, created_at=row.created_at.strftime("%d-%m-%Y %H:%M"),
     )

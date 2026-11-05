@@ -3,12 +3,12 @@
 /** Home: the numbers that matter, the families table, and the things he can do. */
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { Contours, StarMark, Tricolour, useCountUp } from "@/components/Decor";
 import FamilyTable from "@/components/FamilyTable";
 import { Notice, buttonSecondary, errorText } from "@/components/ui";
-import { getDashboard, type Stat } from "@/lib/api";
+import { deleteAllData, getDashboard, getResetStatus, type Stat } from "@/lib/api";
 import { CURRENT_USER } from "@/lib/currentUser";
 
 function greeting(): string {
@@ -124,6 +124,99 @@ function SectionHeading({ id, children }: { id: string; children: React.ReactNod
   );
 }
 
+/** "Are you sure?" before emptying the database. Cancel has the focus, so an
+ *  accidental Enter does nothing; Escape or a click outside also cancels. */
+function ConfirmDelete({
+  families,
+  deleting,
+  onConfirm,
+  onCancel,
+}: {
+  families: number | null;
+  deleting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const cancelButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelButton.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !deleting && onCancel();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [deleting, onCancel]);
+
+  const what =
+    families === null
+      ? "every family"
+      : `all ${families.toLocaleString("en-IN")} ${families === 1 ? "family" : "families"}`;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="confirm-delete-title"
+      aria-describedby="confirm-delete-body"
+    >
+      <button
+        aria-label="Cancel"
+        onClick={() => !deleting && onCancel()}
+        className="absolute inset-0 bg-black/45"
+        tabIndex={-1}
+      />
+      <div className="pb-safe relative w-full max-w-md rounded-3xl border border-border bg-bg p-6 shadow-2xl">
+        <span
+          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-danger/15 text-danger"
+          aria-hidden="true"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M5 7h14M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+        <h2 id="confirm-delete-title" className="mt-4 text-[22px] font-semibold leading-tight">
+          Delete all data?
+        </h2>
+        <div id="confirm-delete-body" className="mt-2 space-y-2 text-[16px] leading-relaxed text-muted">
+          <p>
+            This removes {what}, with their children, applications, documents, call notes, chats and
+            history.
+          </p>
+          <p>User accounts and the list of schemes are kept.</p>
+          <p className="font-semibold text-danger">This cannot be undone.</p>
+        </div>
+        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button
+            ref={cancelButton}
+            type="button"
+            onClick={onCancel}
+            disabled={deleting}
+            className={`${buttonSecondary} w-full sm:w-auto`}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={deleting}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-danger px-6 py-3
+              text-[17px] font-semibold text-bg transition hover:opacity-90 disabled:cursor-wait
+              disabled:opacity-60 sm:w-auto"
+          >
+            {deleting ? "Deleting…" : "Yes, delete everything"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SkeletonTiles() {
   return (
     <div className="grid grid-cols-2 gap-3 sm:gap-4" aria-hidden="true">
@@ -147,10 +240,71 @@ export default function Home() {
 
   useEffect(load, [load]);
 
+  // "Delete all data": shown only when the server allows it (the demo site).
+  const [resetEnabled, setResetEnabled] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleted, setDeleted] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const closeConfirm = useCallback(() => setConfirming(false), []);
+  // Changing this remounts the families table, so it reloads (empty) after a delete.
+  const [tableKey, setTableKey] = useState(0);
+
+  useEffect(() => {
+    getResetStatus()
+      .then((s) => setResetEnabled(s.enabled))
+      .catch(() => setResetEnabled(false));
+  }, []);
+
+  async function removeEverything() {
+    setDeleting(true);
+    setDeleteError(null);
+    setDeleted(null);
+    try {
+      const { families_removed } = await deleteAllData();
+      setConfirming(false);
+      setDeleted(families_removed);
+      load();
+      setTableKey((k) => k + 1);
+    } catch (e) {
+      setConfirming(false);
+      setDeleteError(errorText(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const [main, rest] = stats ? [stats.slice(0, 2), stats.slice(2)] : [[], []];
 
   return (
     <AppShell>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3 sm:mb-8">
+        <div>
+          <p className="text-[15px] text-muted sm:text-[16px]">{today()}</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">{greeting()}, {CURRENT_USER.name.split(" ")[0]}</h1>
+        </div>
+        {resetEnabled && (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            disabled={deleting}
+            className="inline-flex items-center gap-2 rounded-full border border-danger/60 bg-bg px-4 py-2.5
+              text-[15px] font-medium text-danger transition hover:bg-danger hover:text-bg
+              disabled:cursor-wait disabled:opacity-60"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M5 7h14M10 11v6M14 11v6M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12M9 7V4h6v3"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            {deleting ? "Deleting…" : "Delete all data"}
+          </button>
+        )}
+      </div>
       {/* The banner: deep olive, map lines and the tricolour along the top. */}
       <header className="olive-panel rise relative isolate mb-6 overflow-hidden rounded-3xl px-5 pb-6 pt-7 shadow-sm sm:mb-8 sm:px-8 sm:pb-8 sm:pt-9">
         <Tricolour />
@@ -164,6 +318,31 @@ export default function Home() {
           Every family of the fallen, looked after.
         </p>
       </header>
+
+      {confirming && (
+        <ConfirmDelete
+          families={stats?.find((s) => s.key === "families")?.value ?? null}
+          deleting={deleting}
+          onConfirm={removeEverything}
+          onCancel={closeConfirm}
+        />
+      )}
+
+      {deleted !== null && (
+        <div className="mb-6">
+          <Notice tone="success" title="All data deleted" onClose={() => setDeleted(null)}>
+            {deleted.toLocaleString("en-IN")} {deleted === 1 ? "family was" : "families were"} removed.
+            The database is empty and ready for a new sheet.
+          </Notice>
+        </div>
+      )}
+      {deleteError && (
+        <div className="mb-6">
+          <Notice tone="danger" title="Could not delete the data" onClose={() => setDeleteError(null)}>
+            {deleteError}
+          </Notice>
+        </div>
+      )}
 
       {/* ---------- the numbers ---------- */}
       <section aria-labelledby="numbers">

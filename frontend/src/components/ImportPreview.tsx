@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import ImportProgress from "@/components/ImportProgress";
 import PreviewColumns from "@/components/PreviewColumns";
 import RowEditor from "@/components/RowEditor";
 import {
@@ -248,7 +249,11 @@ export default function ImportPreview({ importId }: Props) {
     return <p className="text-[17px] text-danger">{error}</p>;
   }
   if (!preview) {
-    return <p className="text-[17px] text-muted">Checking against the families on record...</p>;
+    return <ImportProgress step="checking" importId={importId} />;
+  }
+  if (importing) {
+    // The import checks the rows once more, then saves: the card follows both.
+    return <ImportProgress step="checking" importId={importId} />;
   }
 
   if (result) {

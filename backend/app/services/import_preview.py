@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
@@ -344,7 +344,13 @@ def build_preview(
     mapping: dict[str, str],
     overrides: dict[str, dict] | None = None,
     added_fields: dict[str, str] | None = None,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> ImportPreview:
+    """What importing this sheet would do, row by row. Writes nothing.
+
+    `on_progress("checking", done, total)` is called as rows are checked, so
+    the screen can show a progress bar.
+    """
     index = FamilyIndex(session)
     labels = extra_field_labels(session)
     overrides = overrides or {}
@@ -356,7 +362,10 @@ def build_preview(
     seen_signatures: dict[str, int] = {}
     problem_count = 0
 
+    total = len(sheet.rows)
     for position, raw_row in enumerate(sheet.rows):
+        if on_progress:
+            on_progress("checking", position + 1, total)
         # +1 for the heading row, +1 because people count from one.
         row_number = (sheet.header_row_number or 1) + position + 1
         parsed = parse_row(raw_row, mapping, sheet.headers, row_number)

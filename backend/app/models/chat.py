@@ -45,3 +45,21 @@ class ChatMessage(Base, TimestampMixin):
     answer: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     chat: Mapped[Chat] = relationship(back_populates="messages")
+
+
+class AnswerFeedback(Base, TimestampMixin):
+    """A thumbs up or down on one chatbot answer.
+
+    Kept so wrong answers can be looked at and turned into tests. Stores the
+    question and how it was answered (title, search, tool), not the rows.
+    """
+
+    __tablename__ = "answer_feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    # +1 (right) or -1 (wrong).
+    rating: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    note: Mapped[str | None] = mapped_column(Text)
+    # kind, title, understood, sql, tool, count: never the rows themselves.
+    answer: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
