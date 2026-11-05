@@ -23,6 +23,8 @@ export default {
         "accent-fg": token("accent-fg"),
         brass: token("brass"),
         success: token("success"),
+        saffron: token("saffron"),
+        "india-green": token("india-green"),
         danger: token("danger"),
         warning: token("warning"),
       },

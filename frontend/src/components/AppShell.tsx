@@ -3,6 +3,7 @@
 /** The frame every page sits in: the menu on the left, the page on the right. */
 
 import { useEffect, useState } from "react";
+import { StarMark, Tricolour } from "@/components/Decor";
 import Sidebar from "@/components/Sidebar";
 
 export default function AppShell({
@@ -27,9 +28,16 @@ export default function AppShell({
     <div className="app-height flex overflow-hidden bg-bg">
       <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative isolate flex min-w-0 flex-1 flex-col">
+        {/* Two soft glows, saffron and green, far behind the page. */}
+        <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
+          <div className="ambient-glow saffron -right-24 -top-32 h-[28rem] w-[28rem]" />
+          <div className="ambient-glow green -bottom-40 -left-24 h-[30rem] w-[30rem]" />
+        </div>
+
         {/* On a phone the menu hides behind this button. */}
-        <header className="pt-safe olive-panel shrink-0 border-b border-border md:hidden">
+        <header className="pt-safe olive-panel relative shrink-0 border-b border-border md:hidden">
+          <Tricolour />
           <div className="flex h-14 items-center gap-1 px-2">
             <button
               onClick={() => setMenuOpen(true)}
@@ -41,7 +49,10 @@ export default function AppShell({
                 <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
             </button>
-            <span className="text-[17px] font-semibold">Army Passion</span>
+            <span className="flex items-center gap-2 text-[17px] font-semibold">
+              <span className="text-accent"><StarMark size={18} /></span>
+              Army Passion
+            </span>
           </div>
         </header>
 

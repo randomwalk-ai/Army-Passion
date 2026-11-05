@@ -1,5 +1,6 @@
 "use client";
 
+import { TricolourRule } from "@/components/Decor";
 import ColumnMapping from "@/components/ColumnMapping";
 import DocumentUpload from "@/components/DocumentUpload";
 import ImportPreview from "@/components/ImportPreview";
@@ -135,7 +136,8 @@ function EmptyState({ onSuggestion }: { onSuggestion: (s: SuggestionCard) => voi
   }, []);
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-3xl flex-col justify-center px-4 py-10">
+    <div className="rise mx-auto flex h-full w-full max-w-3xl flex-col justify-center px-4 py-10">
+      <TricolourRule className="mb-3" />
       <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
         Good to see you, {CURRENT_USER.name.split(" ")[0]}
       </h1>
@@ -154,7 +156,7 @@ function EmptyState({ onSuggestion }: { onSuggestion: (s: SuggestionCard) => voi
                   type="button"
                   onClick={() => onSuggestion(card)}
                   className="flex w-full items-center gap-4 rounded-2xl border border-border
-                    bg-surface px-5 py-4 text-left hover:bg-surface-2"
+                    bg-surface px-5 py-4 text-left transition hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
                 >
                   <span className="flex-1 text-[17px] leading-snug">{card.text}</span>
                   <svg

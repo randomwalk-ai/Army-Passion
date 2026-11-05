@@ -20,6 +20,9 @@
   --accent-fg: #ffffff;
   --brass: #b8892b;
   --success: #2e7d4f;
+  /* The flag's colours: decoration only (stripes, glows), never for text. */
+  --saffron: #ff9933;
+  --india-green: #138808;
   --danger: #a93226;
   --warning: #8a6416;
   /* Native controls (dropdowns, checkboxes, scrollbars) follow the theme too. */
@@ -39,6 +42,8 @@
     --accent-fg: #141810;
     --brass: #d4a649;
     --success: #7cc79a;
+    --saffron: #f2994a;
+    --india-green: #2f9e44;
     --danger: #f2b8b5;
     --warning: #e2be6e;
     color-scheme: dark;
@@ -58,6 +63,8 @@
   --accent-fg: #141810;
   --brass: #d4a649;
   --success: #7cc79a;
+  --saffron: #f2994a;
+  --india-green: #2f9e44;
   --danger: #f2b8b5;
   --warning: #e2be6e;
 }
@@ -171,4 +178,103 @@ textarea {
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* ---------- Army touches: stripes, map lines, glows, motion ---------- */
+
+/* Saffron, white, green, with a soft light that sweeps along every few seconds. */
+.tricolour {
+  height: 4px;
+  overflow: hidden;
+  background: linear-gradient(
+    to right,
+    var(--saffron) 0 33.34%,
+    #ffffff 33.34% 66.67%,
+    var(--india-green) 66.67% 100%
+  );
+}
+.tricolour::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  transform: translateX(-120%);
+  animation: tricolour-sweep 7s ease-in-out infinite;
+}
+@keyframes tricolour-sweep {
+  0%, 55% { transform: translateX(-120%); }
+  100% { transform: translateX(300%); }
+}
+
+/* Survey-map contour lines in the olive panels. */
+.olive-panel .contour-drift,
+.contour-drift {
+  color: var(--text);
+  opacity: 0.07;
+  animation: contour-drift 60s ease-in-out infinite alternate;
+}
+@keyframes contour-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-4%, -3%, 0) scale(1.06); }
+}
+
+/* Two very soft glows behind every page, saffron and green, slowly breathing. */
+.ambient-glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.1;
+  animation: glow-breathe 18s ease-in-out infinite alternate;
+}
+.ambient-glow.saffron { background: var(--saffron); }
+.ambient-glow.green { background: var(--india-green); animation-delay: -9s; }
+@keyframes glow-breathe {
+  from { transform: translate3d(0, 0, 0) scale(1); opacity: 0.07; }
+  to { transform: translate3d(3%, 4%, 0) scale(1.15); opacity: 0.12; }
+}
+
+/* Cards and tiles rise into place one after another. Set --i on each. */
+.rise {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Loading tiles: a slow light passing over them instead of blinking. */
+.shimmer {
+  background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
+  background-size: 300% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -50% 0; }
+}
+
+/* The brass star in the menu turns its light now and then. */
+.star-glint {
+  animation: star-glint 9s ease-in-out infinite;
+}
+@keyframes star-glint {
+  0%, 85%, 100% { filter: brightness(1); }
+  92% { filter: brightness(1.35) drop-shadow(0 0 4px var(--accent)); }
+}
+
+/* Anyone who has asked their computer for less motion gets none. */
+@media (prefers-reduced-motion: reduce) {
+  .tricolour::after,
+  .contour-drift,
+  .ambient-glow,
+  .rise,
+  .shimmer,
+  .star-glint {
+    animation: none !important;
+  }
+  .tricolour::after { display: none; }
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
 }
