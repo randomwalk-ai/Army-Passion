@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import AppShell from "@/components/AppShell";
+import { Contours, StarMark, Tricolour, useCountUp } from "@/components/Decor";
 import FamilyTable from "@/components/FamilyTable";
 import { Notice, buttonSecondary, errorText } from "@/components/ui";
 import { getDashboard, type Stat } from "@/lib/api";
@@ -64,15 +65,16 @@ const ACTIONS = [
   },
 ];
 
-function StatTile({ stat, large }: { stat: Stat; large: boolean }) {
+function StatTile({ stat, large, index }: { stat: Stat; large: boolean; index: number }) {
   const attention = stat.tone === "attention" && stat.value > 0;
+  const shown = useCountUp(stat.value);
   const body = (
     <>
       <p className={`font-medium leading-snug text-muted ${large ? "text-[16px] sm:text-[17px]" : "text-[15px]"}`}>{stat.label}</p>
       <p
         className={`mt-1 font-semibold tabular-nums tracking-tight ${large ? "text-4xl sm:text-6xl" : "text-3xl sm:text-4xl"}`}
       >
-        {stat.value.toLocaleString("en-IN")}
+        {shown.toLocaleString("en-IN")}
       </p>
       {stat.hint && (
         <p className="mt-2 flex items-start gap-1.5 text-[14px] leading-snug text-muted sm:text-[15px]">
@@ -89,15 +91,36 @@ function StatTile({ stat, large }: { stat: Stat; large: boolean }) {
       )}
     </>
   );
-  const classes = `block min-w-0 rounded-2xl border bg-surface p-4 sm:p-6 ${
-    attention ? "border-warning/50" : "border-border"
+  // A thin bar down the left: olive, or brass when something needs attention.
+  const classes = `rise relative block min-w-0 overflow-hidden rounded-2xl border bg-surface p-4 pl-5 sm:p-6 sm:pl-7
+    before:absolute before:inset-y-0 before:left-0 before:w-1 ${
+    attention ? "border-warning/50 before:bg-brass" : "border-border before:bg-accent/70"
   }`;
+  const style = { "--i": index } as React.CSSProperties;
   return stat.href ? (
-    <Link href={stat.href} className={`${classes} transition hover:border-accent hover:shadow-sm`}>
+    <Link
+      href={stat.href}
+      style={style}
+      className={`${classes} transition hover:-translate-y-0.5 hover:border-accent hover:shadow-md`}
+    >
       {body}
     </Link>
   ) : (
-    <div className={classes}>{body}</div>
+    <div style={style} className={classes}>
+      {body}
+    </div>
+  );
+}
+
+/** A section title with a small brass star in front. */
+function SectionHeading({ id, children }: { id: string; children: React.ReactNode }) {
+  return (
+    <h2 id={id} className="mb-4 flex items-center gap-2.5 text-xl font-semibold">
+      <span className="text-brass">
+        <StarMark size={16} />
+      </span>
+      {children}
+    </h2>
   );
 }
 
@@ -105,7 +128,7 @@ function SkeletonTiles() {
   return (
     <div className="grid grid-cols-2 gap-3 sm:gap-4" aria-hidden="true">
       {[0, 1].map((i) => (
-        <div key={i} className="h-32 animate-pulse rounded-2xl bg-surface sm:h-40" />
+        <div key={i} className="shimmer h-32 rounded-2xl border border-border sm:h-40" />
       ))}
     </div>
   );
@@ -128,10 +151,19 @@ export default function Home() {
 
   return (
     <AppShell>
-      <div className="mb-6 sm:mb-8">
-        <p className="text-[15px] text-muted sm:text-[16px]">{today()}</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">{greeting()}, {CURRENT_USER.name.split(" ")[0]}</h1>
-      </div>
+      {/* The banner: deep olive, map lines and the tricolour along the top. */}
+      <header className="olive-panel rise relative isolate mb-6 overflow-hidden rounded-3xl px-5 pb-6 pt-7 shadow-sm sm:mb-8 sm:px-8 sm:pb-8 sm:pt-9">
+        <Tricolour />
+        <Contours />
+        <p className="text-[12px] font-semibold uppercase tracking-[0.22em] text-accent sm:text-[13px]">Jai Hind</p>
+        <h1 className="mt-2 max-w-2xl text-3xl font-semibold tracking-tight sm:text-4xl">
+          {greeting()}, {CURRENT_USER.name.split(" ")[0]}
+        </h1>
+        <p className="mt-2 max-w-2xl text-[16px] text-muted sm:text-[17px]">{today()}</p>
+        <p className="mt-4 max-w-2xl text-[16px] leading-relaxed sm:text-[17px]">
+          Every family of the fallen, looked after.
+        </p>
+      </header>
 
       {/* ---------- the numbers ---------- */}
       <section aria-labelledby="numbers">
@@ -152,14 +184,14 @@ export default function Home() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:gap-4">
-              {main.map((s) => (
-                <StatTile key={s.key} stat={s} large />
+              {main.map((s, i) => (
+                <StatTile key={s.key} stat={s} large index={i} />
               ))}
             </div>
             {rest.length > 0 && (
               <div className="mt-3 grid grid-cols-2 gap-3 sm:mt-4 sm:gap-4 lg:grid-cols-3">
-                {rest.map((s) => (
-                  <StatTile key={s.key} stat={s} large={false} />
+                {rest.map((s, i) => (
+                  <StatTile key={s.key} stat={s} large={false} index={i + 2} />
                 ))}
               </div>
             )}
@@ -169,24 +201,22 @@ export default function Home() {
 
       {/* ---------- the data itself ---------- */}
       <section aria-labelledby="families" className="mt-10 sm:mt-12">
-        <h2 id="families" className="mb-3 text-xl font-semibold">
-          Families
-        </h2>
+        <SectionHeading id="families">Families</SectionHeading>
         <FamilyTable compact />
       </section>
 
       {/* ---------- what he can do ---------- */}
       <section aria-labelledby="actions" className="mt-10 sm:mt-12">
-        <h2 id="actions" className="mb-4 text-xl font-semibold">
-          What would you like to do?
-        </h2>
+        <SectionHeading id="actions">What would you like to do?</SectionHeading>
         <div className="grid gap-4 sm:grid-cols-2">
-          {ACTIONS.map((a) => {
+          {ACTIONS.map((a, index) => {
             const inner = (
               <>
                 <span
-                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${
-                    a.href ? "bg-accent-soft text-accent" : "bg-surface-2 text-muted"
+                  className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl transition ${
+                    a.href
+                      ? "bg-accent-soft text-accent group-hover:bg-accent group-hover:text-accent-fg"
+                      : "bg-surface-2 text-muted"
                   }`}
                   aria-hidden="true"
                 >
@@ -211,8 +241,9 @@ export default function Home() {
               <Link
                 key={a.title}
                 href={a.href}
-                className="group flex gap-4 rounded-2xl border border-border bg-bg p-4 transition sm:p-5
-                  hover:border-accent hover:bg-surface hover:shadow-sm"
+                style={{ "--i": index } as React.CSSProperties}
+                className="rise group flex gap-4 rounded-2xl border border-border bg-surface p-4 transition sm:p-5
+                  hover:-translate-y-0.5 hover:border-accent hover:shadow-md"
               >
                 {inner}
                 <svg

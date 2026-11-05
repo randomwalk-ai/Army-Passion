@@ -4,15 +4,16 @@
 
 import Link from "next/link";
 import { useId } from "react";
+import { TricolourRule } from "@/components/Decor";
 
 export const buttonPrimary =
   "inline-flex items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-[17px] font-semibold " +
-  "text-accent-fg shadow-sm transition hover:opacity-90 disabled:cursor-not-allowed disabled:bg-surface-2 " +
+  "text-accent-fg shadow-sm transition hover:opacity-90 hover:shadow-md active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-surface-2 " +
   "disabled:text-muted disabled:shadow-none";
 
 export const buttonSecondary =
   "inline-flex items-center justify-center gap-2 rounded-full border border-border bg-bg px-6 py-3 " +
-  "text-[17px] font-medium transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:text-muted";
+  "text-[17px] font-medium transition hover:border-accent hover:bg-surface-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:text-muted";
 
 export function PageHeader({
   title,
@@ -36,6 +37,8 @@ export function PageHeader({
           {back.label}
         </Link>
       )}
+      {/* Three short dashes in the flag's colours mark the start of every page. */}
+      <TricolourRule className="mb-3" />
       <h1 className="text-[28px] font-semibold leading-tight tracking-tight sm:text-4xl">{title}</h1>
       {intro && <p className="mt-2 max-w-2xl text-[17px] leading-relaxed text-muted sm:mt-3 sm:text-lg">{intro}</p>}
     </div>
