@@ -3,53 +3,106 @@
 @tailwind utilities;
 
 /* All colours live here as tokens, so the whole look can be changed in one
-   place. Dark mode follows the operating system setting. */
+   place. Dark mode follows the operating system setting.
+
+   Theme: olive and brass. Olive is the main colour (buttons, links, the
+   menu); brass is used sparingly, like insignia (the active menu item, the
+   short rule above page titles). Pages stay warm off-white with white cards. */
 :root {
-  --bg: #ffffff;
-  --surface: #f6f6f4;
-  --surface-2: #ededea;
-  --border: #e2e2dd;
-  --text: #1b1b18;
-  --text-muted: #6b6b63;
-  --accent: #2f6f4e;
-  --accent-soft: #e6f1eb;
+  --bg: #f5f3ec;
+  --surface: #ffffff;
+  --surface-2: #ece9de;
+  --border: #dcd8c9;
+  --text: #1e2417;
+  --text-muted: #5c6350;
+  --accent: #3d4a2b;
+  --accent-soft: #e6eadb;
   --accent-fg: #ffffff;
-  --danger: #b3261e;
-  --warning: #8a5a00;
+  --brass: #b8892b;
+  --success: #2e7d4f;
+  /* The flag's colours: decoration only (stripes, glows), never for text. */
+  --saffron: #ff9933;
+  --india-green: #138808;
+  --danger: #a93226;
+  --warning: #8a6416;
   /* Native controls (dropdowns, checkboxes, scrollbars) follow the theme too. */
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #141413;
-    --surface: #1d1d1b;
-    --surface-2: #272724;
-    --border: #33332f;
-    --text: #ececea;
-    --text-muted: #9b9b92;
-    --accent: #6cbd92;
-    --accent-soft: #1e332a;
-    --accent-fg: #0f1a14;
+    --bg: #12150f;
+    --surface: #1a1e16;
+    --surface-2: #252a1f;
+    --border: #31372a;
+    --text: #ecebe2;
+    --text-muted: #a3a895;
+    --accent: #aebd84;
+    --accent-soft: #263020;
+    --accent-fg: #141810;
+    --brass: #d4a649;
+    --success: #7cc79a;
+    --saffron: #f2994a;
+    --india-green: #2f9e44;
     --danger: #f2b8b5;
-    --warning: #e8c37a;
+    --warning: #e2be6e;
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #141413;
-  --surface: #1d1d1b;
-  --surface-2: #272724;
-  --border: #33332f;
-  --text: #ececea;
-  --text-muted: #9b9b92;
-  --accent: #6cbd92;
-  --accent-soft: #1e332a;
-  --accent-fg: #0f1a14;
+  --bg: #12150f;
+  --surface: #1a1e16;
+  --surface-2: #252a1f;
+  --border: #31372a;
+  --text: #ecebe2;
+  --text-muted: #a3a895;
+  --accent: #aebd84;
+  --accent-soft: #263020;
+  --accent-fg: #141810;
+  --brass: #d4a649;
+  --success: #7cc79a;
+  --saffron: #f2994a;
+  --india-green: #2f9e44;
   --danger: #f2b8b5;
-  --warning: #e8c37a;
+  --warning: #e2be6e;
+}
+
+/* The menu and the phone's top bar: deep olive with brass, in both modes.
+   It only re-sets the tokens, so everything inside keeps its usual classes. */
+.olive-panel {
+  --bg: #263019;
+  --surface: #2f3a22;
+  --surface-2: #3a472c;
+  --border: #415036;
+  --text: #f0f1e6;
+  --text-muted: #b9c0a6;
+  --accent: #d4a649;
+  --accent-soft: #435233;
+  --accent-fg: #1e2417;
+  --danger: #f2b8b5;
+  color-scheme: dark;
+  background: var(--surface);
+  color: var(--text);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .olive-panel {
+    --bg: #12150f;
+    --surface: #171b13;
+    --surface-2: #232a1c;
+    --border: #2b3324;
+    --accent-soft: #2c3622;
+  }
+}
+
+:root[data-theme="dark"] .olive-panel {
+  --bg: #12150f;
+  --surface: #171b13;
+  --surface-2: #232a1c;
+  --border: #2b3324;
+  --accent-soft: #2c3622;
 }
 
 html,
@@ -127,47 +180,101 @@ textarea {
   display: none;
 }
 
-/* ---------- progress bar (imports) ---------- */
+/* ---------- Army touches: stripes, map lines, glows, motion ---------- */
 
-/* A soft band of light that keeps moving along the bar, so a long step never
-   looks frozen even between updates. */
-.progress-shine {
-  background-image: linear-gradient(
-    100deg,
-    transparent 20%,
-    rgb(255 255 255 / 0.35) 50%,
-    transparent 80%
+/* Saffron, white, green, with a soft light that sweeps along every few seconds. */
+.tricolour {
+  height: 4px;
+  overflow: hidden;
+  background: linear-gradient(
+    to right,
+    var(--saffron) 0 33.34%,
+    #ffffff 33.34% 66.67%,
+    var(--india-green) 66.67% 100%
   );
-  background-size: 200% 100%;
-  animation: progress-shine 1.6s linear infinite;
 }
-@keyframes progress-shine {
-  from { background-position: 150% 0; }
+.tricolour::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  transform: translateX(-120%);
+  animation: tricolour-sweep 7s ease-in-out infinite;
+}
+@keyframes tricolour-sweep {
+  0%, 55% { transform: translateX(-120%); }
+  100% { transform: translateX(300%); }
+}
+
+/* Survey-map contour lines in the olive panels. */
+.olive-panel .contour-drift,
+.contour-drift {
+  color: var(--text);
+  opacity: 0.07;
+  animation: contour-drift 60s ease-in-out infinite alternate;
+}
+@keyframes contour-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(-4%, -3%, 0) scale(1.06); }
+}
+
+/* Two very soft glows behind every page, saffron and green, slowly breathing. */
+.ambient-glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.1;
+  animation: glow-breathe 18s ease-in-out infinite alternate;
+}
+.ambient-glow.saffron { background: var(--saffron); }
+.ambient-glow.green { background: var(--india-green); animation-delay: -9s; }
+@keyframes glow-breathe {
+  from { transform: translate3d(0, 0, 0) scale(1); opacity: 0.07; }
+  to { transform: translate3d(3%, 4%, 0) scale(1.15); opacity: 0.12; }
+}
+
+/* Cards and tiles rise into place one after another. Set --i on each. */
+.rise {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Loading tiles: a slow light passing over them instead of blinking. */
+.shimmer {
+  background: linear-gradient(100deg, var(--surface) 30%, var(--surface-2) 50%, var(--surface) 70%);
+  background-size: 300% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@keyframes shimmer {
+  from { background-position: 100% 0; }
   to { background-position: -50% 0; }
 }
 
-/* A slow breathing ring around the step icon. */
-.progress-pulse {
-  animation: progress-pulse 2s ease-in-out infinite;
+/* The brass star in the menu turns its light now and then. */
+.star-glint {
+  animation: star-glint 9s ease-in-out infinite;
 }
-@keyframes progress-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
-  50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 0%, transparent); }
-}
-
-/* Used before the server has said how far along it is. */
-.progress-indeterminate {
-  animation: progress-indeterminate 1.4s ease-in-out infinite;
-}
-@keyframes progress-indeterminate {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(250%); }
+@keyframes star-glint {
+  0%, 85%, 100% { filter: brightness(1); }
+  92% { filter: brightness(1.35) drop-shadow(0 0 4px var(--accent)); }
 }
 
+/* Anyone who has asked their computer for less motion gets none. */
 @media (prefers-reduced-motion: reduce) {
-  .progress-shine,
-  .progress-pulse,
-  .progress-indeterminate {
-    animation: none;
+  .tricolour::after,
+  .contour-drift,
+  .ambient-glow,
+  .rise,
+  .shimmer,
+  .star-glint {
+    animation: none !important;
   }
+  .tricolour::after { display: none; }
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { transition-duration: 0.01ms !important; }
 }

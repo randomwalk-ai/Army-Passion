@@ -10,8 +10,8 @@ export type Theme = "light" | "dark";
 
 const KEY = "army-passion-theme";
 
-// The page background in each theme, also used for the phone's status bar.
-const BAR_COLOUR = { light: "#ffffff", dark: "#141413" };
+// The phone's status bar matches the olive top bar (see .olive-panel in globals.css).
+const BAR_COLOUR = { light: "#2f3a22", dark: "#171b13" };
 
 /** Inlined in <head>; must stay plain, self-contained JavaScript. */
 export const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem("${KEY}");if(t==="light"||t==="dark"){document.documentElement.setAttribute("data-theme",t);document.addEventListener("DOMContentLoaded",function(){document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.setAttribute("content",t==="dark"?"${BAR_COLOUR.dark}":"${BAR_COLOUR.light}")})})}}catch(e){}})();`;

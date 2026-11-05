@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { Contours, StarMark, Tricolour } from "@/components/Decor";
 import ThemeSwitch from "@/components/ThemeSwitch";
 import type { ChatSummary } from "@/lib/api";
 import { CURRENT_USER, initials } from "@/lib/currentUser";
@@ -143,24 +144,28 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`pt-safe fixed inset-y-0 left-0 z-40 flex w-[min(18rem,85vw)] flex-col border-r border-border bg-surface md:w-72
-          transition-transform duration-200 md:static md:translate-x-0
+        className={`pt-safe fixed inset-y-0 left-0 z-40 isolate flex w-[min(18rem,85vw)] flex-col overflow-hidden border-r border-border olive-panel md:w-72
+          transition-transform duration-200 md:relative md:translate-x-0
           ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
-        <div className="flex items-center justify-between px-5 py-5">
-          <Link href="/" onClick={onClose} className="flex items-center gap-2.5">
+        <Tricolour />
+        <Contours />
+
+        <div className="flex items-center justify-between px-5 pb-5 pt-6">
+          <Link href="/" onClick={onClose} className="flex items-center gap-3">
             <span
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-fg"
+              className="star-glint flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-accent-fg
+                shadow-[inset_0_-2px_0_rgba(0,0,0,0.18)] ring-1 ring-black/10"
               aria-hidden="true"
             >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.4 6.8 19.1l1-5.8L3.5 9.2l5.9-.9L12 3z"
-                  fill="currentColor"
-                />
-              </svg>
+              <StarMark size={22} />
             </span>
-            <span className="text-lg font-semibold tracking-tight">Army Passion</span>
+            <span className="leading-tight">
+              <span className="block text-lg font-semibold tracking-tight">Army Passion</span>
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+                For the families
+              </span>
+            </span>
           </Link>
           <button
             onClick={onClose}
@@ -198,7 +203,7 @@ export default function Sidebar({
                     className={`flex items-center gap-3 rounded-xl px-3 py-3 text-[16px] transition-colors
                       ${
                         isActive(item.href)
-                          ? "bg-accent-soft font-semibold text-text"
+                          ? "bg-accent-soft font-semibold text-text shadow-[inset_3px_0_0_var(--accent)]"
                           : "text-muted hover:bg-surface-2 hover:text-text"
                       }`}
                   >
