@@ -29,7 +29,7 @@ export default function AppShell({
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* On a phone the menu hides behind this button. */}
-        <header className="pt-safe shrink-0 border-b border-border bg-bg md:hidden">
+        <header className="pt-safe olive-panel shrink-0 border-b border-border md:hidden">
           <div className="flex h-14 items-center gap-1 px-2">
             <button
               onClick={() => setMenuOpen(true)}

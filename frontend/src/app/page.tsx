@@ -129,6 +129,7 @@ export default function Home() {
   return (
     <AppShell>
       <div className="mb-6 sm:mb-8">
+        <span className="mb-3 block h-1 w-10 rounded-full bg-brass" aria-hidden="true" />
         <p className="text-[15px] text-muted sm:text-[16px]">{today()}</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight sm:text-4xl">{greeting()}, {CURRENT_USER.name.split(" ")[0]}</h1>
       </div>
@@ -211,8 +212,8 @@ export default function Home() {
               <Link
                 key={a.title}
                 href={a.href}
-                className="group flex gap-4 rounded-2xl border border-border bg-bg p-4 transition sm:p-5
-                  hover:border-accent hover:bg-surface hover:shadow-sm"
+                className="group flex gap-4 rounded-2xl border border-border bg-surface p-4 transition sm:p-5
+                  hover:border-accent hover:shadow-sm"
               >
                 {inner}
                 <svg

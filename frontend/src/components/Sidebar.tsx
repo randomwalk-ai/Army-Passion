@@ -143,14 +143,14 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`pt-safe fixed inset-y-0 left-0 z-40 flex w-[min(18rem,85vw)] flex-col border-r border-border bg-surface md:w-72
+        className={`pt-safe fixed inset-y-0 left-0 z-40 flex w-[min(18rem,85vw)] flex-col border-r border-border olive-panel md:w-72
           transition-transform duration-200 md:static md:translate-x-0
           ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="flex items-center justify-between px-5 py-5">
           <Link href="/" onClick={onClose} className="flex items-center gap-2.5">
             <span
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-fg"
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-accent text-accent-fg ring-1 ring-black/10"
               aria-hidden="true"
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -198,7 +198,7 @@ export default function Sidebar({
                     className={`flex items-center gap-3 rounded-xl px-3 py-3 text-[16px] transition-colors
                       ${
                         isActive(item.href)
-                          ? "bg-accent-soft font-semibold text-text"
+                          ? "bg-accent-soft font-semibold text-text shadow-[inset_3px_0_0_var(--accent)]"
                           : "text-muted hover:bg-surface-2 hover:text-text"
                       }`}
                   >

@@ -15,8 +15,8 @@ export const viewport: Viewport = {
   // itself clear of it (see .pt-safe / .pb-safe in globals.css).
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#141413" },
+    { media: "(prefers-color-scheme: light)", color: "#2f3a22" },
+    { media: "(prefers-color-scheme: dark)", color: "#171b13" },
   ],
 };
 

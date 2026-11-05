@@ -36,6 +36,8 @@ export function PageHeader({
           {back.label}
         </Link>
       )}
+      {/* A short brass rule, like a rank stripe, marks the start of every page. */}
+      <span className="mb-3 block h-1 w-10 rounded-full bg-brass" aria-hidden="true" />
       <h1 className="text-[28px] font-semibold leading-tight tracking-tight sm:text-4xl">{title}</h1>
       {intro && <p className="mt-2 max-w-2xl text-[17px] leading-relaxed text-muted sm:mt-3 sm:text-lg">{intro}</p>}
     </div>
