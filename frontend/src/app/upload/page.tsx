@@ -6,6 +6,7 @@ import { useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import ColumnMapping from "@/components/ColumnMapping";
 import ImportPreview from "@/components/ImportPreview";
+import ImportProgress from "@/components/ImportProgress";
 import { Notice, PageHeader, buttonPrimary, buttonSecondary, errorText } from "@/components/ui";
 import { uploadSheet, type UploadResult } from "@/lib/api";
 import { classify, formatSize } from "@/lib/files";
@@ -52,6 +53,8 @@ export default function UploadPage() {
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [reading, setReading] = useState(false);
+  // Share of the file sent so far (0 to 1), for the progress bar.
+  const [sent, setSent] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [upload, setUpload] = useState<UploadResult | null>(null);
   const [columnsConfirmed, setColumnsConfirmed] = useState(false);
@@ -70,8 +73,9 @@ export default function UploadPage() {
     setUpload(null);
     setColumnsConfirmed(false);
     setReading(true);
+    setSent(0);
     try {
-      setUpload(await uploadSheet(picked));
+      setUpload(await uploadSheet(picked, setSent));
     } catch (e) {
       setError(errorText(e));
       setFile(null);
@@ -167,6 +171,8 @@ export default function UploadPage() {
           </button>
         </div>
       )}
+
+      {reading && <ImportProgress step="sending" sent={sent} />}
 
       {/* ---------- step 2 ---------- */}
       {upload && !columnsConfirmed && (

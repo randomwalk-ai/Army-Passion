@@ -57,14 +57,54 @@ async function failureMessage(response: Response): Promise<string> {
   return `Something went wrong (${response.status}).`;
 }
 
-export async function uploadSheet(file: File): Promise<UploadResult> {
+/** Sends the sheet. `onSent(fraction)` reports how much of the file has gone
+ *  (0 to 1), for the progress bar; fetch() cannot report that, so this uses
+ *  XMLHttpRequest. */
+export function uploadSheet(
+  file: File,
+  onSent?: (fraction: number) => void,
+): Promise<UploadResult> {
   const form = new FormData();
   form.append("file", file);
 
-  const response = await fetch(`${API_BASE}/api/imports/upload`, {
-    method: "POST",
-    body: form,
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_BASE}/api/imports/upload`);
+    request.responseType = "json";
+    if (onSent) {
+      request.upload.onprogress = (event) => {
+        if (event.lengthComputable) onSent(event.loaded / event.total);
+      };
+    }
+    request.onload = () => {
+      if (request.status >= 200 && request.status < 300) {
+        resolve(request.response as UploadResult);
+        return;
+      }
+      const detail = (request.response as { detail?: unknown } | null)?.detail;
+      reject(
+        new Error(typeof detail === "string" ? detail : `Something went wrong (${request.status}).`),
+      );
+    };
+    request.onerror = () =>
+      reject(new Error("I could not reach the server. Please check that the backend is running."));
+    request.send(form);
   });
+}
+
+export type ImportProgress = {
+  /** "checking" (rows against saved families) or "saving"; null when idle. */
+  stage: "checking" | "saving" | null;
+  done: number;
+  total: number;
+  percent: number;
+  /** A rough estimate; null until there is enough to go on. */
+  seconds_left: number | null;
+};
+
+/** How far the preview or import of this sheet has got. Asked once a second. */
+export async function getImportProgress(importId: number): Promise<ImportProgress> {
+  const response = await fetch(`${API_BASE}/api/imports/${importId}/progress`);
   if (!response.ok) throw new Error(await failureMessage(response));
   return response.json();
 }
@@ -930,4 +970,20 @@ export async function openChat(chatId: number): Promise<SavedChat> {
 export async function deleteChat(chatId: number): Promise<void> {
   const response = await fetch(`${API_BASE}/api/chats/${chatId}`, { method: "DELETE" });
   if (!response.ok) throw new Error(await failureMessage(response));
+}
+
+// --- demo: delete all data ---------------------------------------------------
+
+/** Whether Home shows "Delete all data" (only when the server allows it). */
+export async function getResetStatus(): Promise<{ enabled: boolean }> {
+  const response = await fetch(`${API_BASE}/api/admin/reset`);
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+/** Empties the database: every family, child, application, document and chat. */
+export async function deleteAllData(): Promise<{ families_removed: number }> {
+  const response = await fetch(`${API_BASE}/api/admin/reset`, { method: "POST" });
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
 }

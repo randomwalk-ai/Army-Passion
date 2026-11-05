@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     # Shown on the Sentry dashboard; defaults to APP_ENV.
     sentry_environment: str = ""
 
+    # Shows the "Delete all data" button on Home, which empties the database.
+    # Only for the demo site (set ALLOW_DATA_RESET=true on Render); off everywhere
+    # else, so it can never empty a database holding real families.
+    allow_data_reset: bool = False
+
     # Used when llm_provider is not "mock".
     llm_api_key: str = ""
     # Model names change and old ones get retired; leave blank to use the

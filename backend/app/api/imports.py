@@ -15,6 +15,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -52,6 +53,7 @@ from app.services.llm import get_llm
 from app.services.excel_reader import SheetData, read_sheet
 from app.services.import_apply import apply_import
 from app.services.import_preview import build_preview
+from app.services.import_progress import ProgressTracker
 from app.services.storage import get_storage
 
 router = APIRouter(prefix="/api/imports", tags=["imports"])
@@ -493,17 +495,20 @@ def _build_preview_response(
     session: Session, batch: ImportBatch
 ) -> PreviewResponse:
     sheet = _reload_sheet(batch)
+    tracker = ProgressTracker(batch.id)
     preview = build_preview(
         session,
         sheet,
         batch.confirmed_mapping,
         batch.row_overrides or {},
         batch.added_fields or {},
+        on_progress=tracker.update,
     )
 
     batch.status = ImportStatus.previewed
     batch.summary = {"counts": preview.counts, "problem_count": preview.problem_count}
     session.commit()
+    tracker.clear()
 
     # to_dict() converts the nested FieldChange objects to plain data too;
     # passing the dataclasses straight through fails validation.
@@ -581,6 +586,37 @@ def edit_columns(
     return _build_preview_response(session, batch)
 
 
+class ProgressOut(BaseModel):
+    """How far a long step has got. `stage` is None when nothing is running."""
+
+    stage: str | None = None  # "checking" or "saving"
+    done: int = 0
+    total: int = 0
+    percent: int = 0
+    # A rough estimate from the speed so far; None until there is enough to go on.
+    seconds_left: int | None = None
+
+
+@router.get("/{import_id}/progress", response_model=ProgressOut)
+def import_progress(import_id: int, session: Session = Depends(get_session)) -> ProgressOut:
+    """Asked about once a second by the screen while a preview or import runs."""
+    progress = session.scalar(select(ImportBatch.progress).where(ImportBatch.id == import_id))
+    if not progress or not progress.get("total"):
+        return ProgressOut()
+    done, total = int(progress.get("done", 0)), int(progress["total"])
+    elapsed = float(progress.get("elapsed") or 0)
+    seconds_left = None
+    if done >= 20 and elapsed >= 1:
+        seconds_left = max(0, round((total - done) * elapsed / done))
+    return ProgressOut(
+        stage=progress.get("stage"),
+        done=done,
+        total=total,
+        percent=min(100, round(done * 100 / total)),
+        seconds_left=seconds_left,
+    )
+
+
 @router.post("/{import_id}/commit", response_model=CommitResponse)
 def commit_import(
     import_id: int, session: Session = Depends(get_session)
@@ -601,10 +637,12 @@ def commit_import(
     _require_mapping(batch)
 
     sheet = _reload_sheet(batch)
+    tracker = ProgressTracker(batch.id)
     try:
-        outcome = apply_import(session, batch, sheet)
+        outcome = apply_import(session, batch, sheet, on_progress=tracker.update)
     except Exception as exc:  # noqa: BLE001
         session.rollback()
+        tracker.clear()
         batch = session.get(ImportBatch, import_id)
         if batch is not None:
             batch.status = ImportStatus.failed
@@ -618,6 +656,7 @@ def commit_import(
     batch.imported_at = datetime.now(IST)
     batch.summary = {**batch.summary, "outcome": outcome.as_dict()}
     session.commit()
+    tracker.clear()
 
     return CommitResponse(
         import_id=batch.id, status=batch.status.value, **outcome.as_dict()

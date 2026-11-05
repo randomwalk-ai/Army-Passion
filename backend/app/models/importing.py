@@ -71,6 +71,11 @@ class ImportBatch(Base, TimestampMixin):
     # Counts shown on the preview card, and the result after importing.
     summary: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
+    # How far a long step has got, for the progress bar on the screen:
+    # {"stage": "checking" | "saving", "done": 420, "total": 997, "started_at": ...}.
+    # Written from its own connection while the step runs (see import_progress.py).
+    progress: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
     uploaded_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
     )

@@ -199,6 +199,16 @@ Step-by-step guide: [`docs/deploy.md`](docs/deploy.md) (one DigitalOcean server)
 For a quick demo on Render (frontend + backend) and Supabase (database), see
 [`docs/deploy-render.md`](docs/deploy-render.md); the services are described in `render.yaml`.
 
+**"Delete all data" (demo only).** With `ALLOW_DATA_RESET=true` on the API
+service in Render, Home shows a red **Delete all data** button (top right) that
+empties the database in one click: families, children, applications,
+documents, chats and history. Users and schemes are kept. Set it to `false`
+(or remove it) to hide the button; refresh Home after Render restarts.
+
+**Big sheets.** Uploading shows a progress card (sending, checking, saving)
+with a percentage and the time left. New families are saved in groups of 200,
+so a 1,000-row sheet takes well under a minute instead of about 8 minutes.
+
 **Error reporting (Sentry).** Errors from the live site show on the
 [sentry.io](https://sentry.io) dashboard (Issues), with no emails. Off unless
 `SENTRY_DSN` (backend) and `NEXT_PUBLIC_SENTRY_DSN` (frontend, needs a

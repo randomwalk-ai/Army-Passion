@@ -126,3 +126,48 @@ textarea {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ---------- progress bar (imports) ---------- */
+
+/* A soft band of light that keeps moving along the bar, so a long step never
+   looks frozen even between updates. */
+.progress-shine {
+  background-image: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgb(255 255 255 / 0.35) 50%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: progress-shine 1.6s linear infinite;
+}
+@keyframes progress-shine {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
+/* A slow breathing ring around the step icon. */
+.progress-pulse {
+  animation: progress-pulse 2s ease-in-out infinite;
+}
+@keyframes progress-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
+  50% { box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+
+/* Used before the server has said how far along it is. */
+.progress-indeterminate {
+  animation: progress-indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-shine,
+  .progress-pulse,
+  .progress-indeterminate {
+    animation: none;
+  }
+}

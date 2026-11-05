@@ -43,12 +43,19 @@ STATUS_WORDS = {
 
 
 def cea_tool(
-    session: Session, year_label: str | None, today: date, name: str | None = None
+    session: Session,
+    year_label: str | None,
+    today: date,
+    name: str | None = None,
+    classes: list[int] | None = None,
+    limit: int | None = None,
 ) -> Answer:
     """CEA in one academic year, using the real CEA rules.
 
     With a `name`, checks that one family child by child ("is Meena Dagar
-    eligible?"); without, lists every child who can claim.
+    eligible?"); without, lists every child who can claim. `classes` keeps only
+    children in those classes (e.g. [10, 12], the board years), highest class
+    first, and `limit` keeps that many families ("which 10 should I fill first?").
     """
     scheme = ensure_cea_scheme(session)
     session.commit()
@@ -73,28 +80,54 @@ def cea_tool(
         .order_by(Family.primary_contact_name)
     ).all()
 
-    rows: list[list[object]] = []
+    wanted = {c for c in classes or [] if 0 <= c <= 12}
+    found: list[tuple[int, list[object]]] = []
     for family in families:
         verdict = evaluate_family(family, year, scheme.rules)
         if verdict.status != ELIGIBLE:
             continue
         for child in verdict.eligible_children:
-            rows.append([
+            if wanted and child.class_number not in wanted:
+                continue
+            found.append((child.class_number or 0, [
                 family.family_code,
                 family.primary_contact_name,
                 family.district,
                 child.name,
                 child.age,
                 f"Class {child.class_number}" if child.class_number else None,
-                child.cea_amount + child.hostel_amount,
-            ])
+                child.total,
+            ]))
 
+    if wanted:
+        # Highest class first: a board-exam year (12, then 10) matters most.
+        found.sort(key=lambda pair: -pair[0])
+    rows = [row for _, row in found]
+    if limit and limit > 0:
+        keep: list[object] = []
+        for row in rows:
+            if row[0] not in keep:
+                keep.append(row[0])
+            if len(keep) == limit:
+                break
+        rows = [row for row in rows if row[0] in keep]
+
+    families_shown = len({row[0] for row in rows})
+    what = f"Children eligible for CEA, academic year {year.label}"
+    if wanted:
+        what += ", in Class " + " / ".join(str(c) for c in sorted(wanted, reverse=True))
+    if limit:
+        what = f"{families_shown} families to fill first — " + what[0].lower() + what[1:]
     return Answer(
         kind="table",
-        title=f"Children eligible for CEA, academic year {year.label}{note}",
-        tool=f"cea for all families, year {year.label}",
+        title=what + note,
+        tool=(
+            f"cea for all families, year {year.label}"
+            + (f", classes {sorted(wanted)}" if wanted else "")
+            + (f", top {limit} families" if limit else "")
+        ),
         columns=["Family Code", "Widow / NOK", "District", "Child", "Age", "Class",
-                 "Monthly amount (₹)"],
+                 "Amount for the year (₹)"],
         rows=rows,
         count=len(rows),
     )
