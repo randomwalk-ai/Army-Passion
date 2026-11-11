@@ -12,7 +12,17 @@ import {
   type RowPreview,
 } from "@/lib/api";
 
-type Props = { importId: number };
+type Props = {
+  importId: number;
+  /** True while rows are being checked or saved, so the page can hide "Back". */
+  onBusyChange?: (busy: boolean) => void;
+  /** Called once the import has finished and the families are saved. */
+  onFinished?: () => void;
+  /** "Upload another sheet", shown after the import has finished. */
+  onStartAgain?: () => void;
+  /** How many rows he corrected or left out, so the page can warn before they are lost. */
+  onEditsChange?: (rows: number) => void;
+};
 
 const ACTION_LABELS: Record<RowPreview["action"], string> = {
   create: "New families",
@@ -215,12 +225,67 @@ function Group({
   );
 }
 
-export default function ImportPreview({ importId }: Props) {
+/** The same words wherever rows repeated inside the sheet are mentioned. */
+function repeatsText(count: number): string {
+  return count === 1
+    ? "1 row appears twice in this sheet. The second copy is skipped."
+    : `${count} rows appear twice in this sheet. The second copy is skipped.`;
+}
+
+/** Shown instead of the Import button when no row would be written, with the reasons why. */
+function NothingToImport({ counts }: { counts: PreviewResult["counts"] }) {
+  const n = (action: RowPreview["action"]) => counts[action] ?? 0;
+  const s = (count: number) => (count === 1 ? "" : "s");
+  const reasons = [
+    n("unchanged") > 0 &&
+      `${n("unchanged")} famil${n("unchanged") === 1 ? "y is" : "ies are"} already in the database with the same details.`,
+    n("duplicate_in_file") > 0 && repeatsText(n("duplicate_in_file")),
+    n("excluded") > 0 && `${n("excluded")} row${s(n("excluded"))} you left out.`,
+    n("skipped") > 0 && `${n("skipped")} row${s(n("skipped"))} could not be used.`,
+  ].filter(Boolean) as string[];
+
+  return (
+    <div className="rounded-xl border border-border bg-bg px-4 py-4" role="status">
+      <p className="text-[17px] font-semibold">Nothing new to import</p>
+      {reasons.length > 0 && (
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-[15px]">
+          {reasons.map((reason) => (
+            <li key={reason}>{reason}</li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-3 text-[15px] text-muted">
+        To add or update families, change the sheet and upload it again.
+      </p>
+    </div>
+  );
+}
+
+export default function ImportPreview({
+  importId,
+  onBusyChange,
+  onFinished,
+  onStartAgain,
+  onEditsChange,
+}: Props) {
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [result, setResult] = useState<CommitResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
+  const busy = importing || (!preview && !error);
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+  useEffect(() => {
+    if (result) onFinished?.();
+  }, [result, onFinished]);
+  useEffect(() => {
+    if (!preview) return;
+    onEditsChange?.(
+      preview.rows.filter((r) => r.edited_fields.length > 0 || r.skipped_by_user).length,
+    );
+  }, [preview, onEditsChange]);
   useEffect(() => {
     let cancelled = false;
     previewImport(importId)
@@ -292,6 +357,15 @@ export default function ImportPreview({ importId }: Props) {
             </li>
           )}
         </ul>
+        {onStartAgain && (
+          <button
+            onClick={onStartAgain}
+            className="mt-4 w-full rounded-full border border-border px-6 py-3 text-[17px] font-semibold
+              hover:bg-surface-2 sm:w-auto"
+          >
+            Upload another sheet
+          </button>
+        )}
       </div>
     );
   }
@@ -304,6 +378,7 @@ export default function ImportPreview({ importId }: Props) {
     (preview.counts.create ?? 0) +
     (preview.counts.update ?? 0) +
     (preview.counts.needs_decision ?? 0);
+  const repeats = preview.counts.duplicate_in_file ?? 0;
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
@@ -327,18 +402,27 @@ export default function ImportPreview({ importId }: Props) {
 
       <div className="mt-5 space-y-3 border-t border-border pt-4">
         {error && <p className="text-[15px] text-danger">{error}</p>}
-        <p className="text-[15px] text-muted">
-          {willWrite} row{willWrite === 1 ? "" : "s"} will be written. Every change
-          keeps the old value, so this can be traced back.
-        </p>
-        <button
-          onClick={runImport}
-          disabled={importing || willWrite === 0}
-          className="w-full rounded-full bg-accent px-6 py-3 text-[17px] font-semibold text-accent-fg
-            disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted sm:w-auto"
-        >
-          {importing ? "Importing..." : `Import ${willWrite} rows`}
-        </button>
+        {willWrite === 0 ? (
+          <NothingToImport counts={preview.counts} />
+        ) : (
+          <>
+            {repeats > 0 && (
+              <p className="text-[15px] text-muted">{repeatsText(repeats)}</p>
+            )}
+            <p className="text-[15px] text-muted">
+              {willWrite} row{willWrite === 1 ? "" : "s"} will be written. Every change
+              keeps the old value, so this can be traced back.
+            </p>
+            <button
+              onClick={runImport}
+              disabled={importing}
+              className="w-full rounded-full bg-accent px-6 py-3 text-[17px] font-semibold text-accent-fg
+                disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted sm:w-auto"
+            >
+              {importing ? "Importing..." : `Import ${willWrite} rows`}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

@@ -14,14 +14,18 @@ import {
 type Props = {
   result: UploadResult;
   onConfirmed: (mapping: Record<string, string>) => void;
+  /** The choices confirmed earlier, when he comes back to this step with "Back". */
+  saved?: Record<string, string> | null;
 };
 
-export default function ColumnMapping({ result, onConfirmed }: Props) {
-  // Start from what the system worked out; he corrects only if it is wrong.
+export default function ColumnMapping({ result, onConfirmed, saved }: Props) {
+  // Start from what the system worked out (or what he confirmed before going
+  // back); he corrects only if it is wrong.
   const [choices, setChoices] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
     for (const column of result.columns) {
-      initial[column.source_heading] = column.target_key ?? "";
+      initial[column.source_heading] =
+        saved?.[column.source_heading] ?? column.target_key ?? "";
     }
     return initial;
   });
@@ -68,7 +72,9 @@ export default function ColumnMapping({ result, onConfirmed }: Props) {
     const initial: Record<string, "add" | "ignore"> = {};
     for (const column of result.columns) {
       if (!column.target_key) {
-        initial[column.source_heading] = column.suggested_new_field ? "add" : "ignore";
+        const before = saved?.[column.source_heading];
+        initial[column.source_heading] =
+          before === IGNORE ? "ignore" : column.suggested_new_field ? "add" : "ignore";
       }
     }
     return initial;
