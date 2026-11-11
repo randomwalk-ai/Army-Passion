@@ -481,23 +481,24 @@ def _period(child: CeaChildForm) -> str:
 
 
 def _draw_cover(w: _Writer, form: CeaForm) -> None:
-    w.text(104, 789, form.nok_name, 300)
-    w.text(104, 761, _rank_name(form), 300)
+    # Each value sits on the same line as its printed label, just above the rule.
+    w.text(104, 786, form.nok_name, 300)
+    w.text(104, 757, _rank_name(form), 300)
     # The first line holds what fits; the rest goes on the lines below.
     first_line = _fit_words(w, form.home_address, 390, 10)
-    w.text(154, 735, first_line, 390)
+    w.text(154, 727, first_line, 390)
     rest = " ".join(form.home_address.split())[len(first_line):].strip(" ,")
-    w.lines(60, 708, rest, 480, 2, size=10, leading=13)
-    w.lines(180, 650, form.record_office, 360, 3, size=10, leading=13)
-    w.text(180, 599, form.record_office_pincode, 120)
+    w.lines(60, 698, rest, 480, 2, size=10, leading=13)
+    w.lines(180, 650, form.record_office, 360, 3, size=10, leading=14)
+    w.text(180, 592, form.record_office_pincode, 120)
 
-    w.text(280, 405, form.academic_year, 70)
+    w.text(280, 404, form.academic_year, 70)
     names = " & ".join(c.name for c in form.children)
-    w.text(60, 380, names, 190)
-    w.text(342, 380, form.service_number, 105)
-    w.text(500, 380, form.soldier_rank, 58)
-    w.text(106, 356, form.soldier_name, 185)
-    w.text(140, 97, form.dated, 120)
+    w.text(60, 382, names, 190)
+    w.text(342, 382, form.service_number, 105)
+    w.text(500, 382, form.soldier_rank, 58)
+    w.text(106, 360, form.soldier_name, 185)
+    w.text(108, 94, form.dated, 120)
 
 
 def _fit_words(w: _Writer, value: str, width: float, size: float) -> str:
@@ -512,57 +513,60 @@ def _fit_words(w: _Writer, value: str, width: float, size: float) -> str:
 
 
 def _draw_bill(w: _Writer, form: CeaForm) -> None:
-    w.text(296, 520, _rank_name(form), 260)
-    w.text(296, 494, form.service_number, 260)
-    w.text(296, 468, form.unit, 260)
+    w.text(296, 524, _rank_name(form), 260)
+    w.text(296, 497, form.service_number, 260)
+    w.text(296, 469, form.unit, 260)
     w.text(296, 442, form.nok_name, 260)
 
-    rows = [(320, 128), (265, 88)]  # (details table y, expenditure table y)
+    # (details table y, expenditure table y): level with "1st Child" / "2nd Child".
+    # x leaves a small gap after each cell's left border.
+    rows = [(317, 136), (262, 93)]
     for child, (y, money_y) in zip(form.children, rows):
-        w.lines(123, y, child.name, 104, 3, size=9)
-        w.text(233, y, child.date_of_birth, 65, 9)
-        w.lines(303, y, child.current_class, 64, 3, size=9)
-        w.text(373, y, form.academic_year, 60, 9)
-        w.lines(438, y, _school(child), 120, 4, size=8, leading=10)
+        w.lines(127, y, child.name, 100, 3, size=9)
+        w.text(235, y, child.date_of_birth, 64, 9)
+        w.lines(307, y, child.current_class, 60, 3, size=9)
+        w.text(374, y, form.academic_year, 60, 9)
+        w.lines(442, y, _school(child), 110, 4, size=8, leading=10)
 
-        w.lines(130, money_y + 4, _period(child), 132, 2, size=9)
+        w.lines(132, money_y, _period(child), 132, 2, size=9)
         w.text(272, money_y, _rupees(child.cea_amount), 90)
         if child.hostel_amount:
             w.text(372, money_y, _rupees(child.hostel_amount), 90)
-        w.text(474, money_y, _rupees(child.total), 88)
+        w.text(476, money_y, _rupees(child.total), 86)
 
-    w.text(474, 36, _rupees(sum(c.total for c in form.children)), 88, 11)
+    w.text(476, 38, _rupees(sum(c.total for c in form.children)), 86, 11)
 
 
 def _draw_bill_2(w: _Writer, form: CeaForm) -> None:
     first = form.children[0] if form.children else None
     board = first.school_board if first else ""
-    w.text(358, 588, " / ".join(p for p in (board, form.school_state) if p), 125, 9)
+    w.text(358, 584, " / ".join(p for p in (board, form.school_state) if p), 125, 9)
     if first:
-        w.text(186, 573, first.school_affiliation_code, 150, 9)
+        w.text(186, 570, first.school_affiliation_code, 150, 9)
 
-    w.text(304, 513, form.bank_account_holder, 250)
+    # Level with each label in the left column.
+    w.text(304, 519, form.bank_account_holder, 250)
     bank = ", ".join(p for p in (form.bank_name, form.bank_branch, form.bank_address) if p)
-    w.lines(304, 489, bank, 250, 2, size=9, leading=11)
-    w.text(304, 441, form.bank_account_number, 250)
-    w.text(304, 415, form.bank_ifsc, 250)
+    w.lines(304, 490, bank, 250, 2, size=9, leading=11)
+    w.text(304, 448, form.bank_account_number, 250)
+    w.text(304, 420, form.bank_ifsc, 250)
 
     w.lines(100, 340, form.home_address, 195, 4, size=9, leading=12)
     w.lines(305, 340, form.correspondence_address, 245, 4, size=9, leading=12)
-    w.text(125, 276, form.permanent_pincode, 160)
-    w.text(335, 276, form.correspondence_pincode, 160)
-    w.text(190, 245, form.mobile, 200)
-    w.text(130, 158, form.dated, 120)
+    w.text(125, 278, form.permanent_pincode, 160)
+    w.text(335, 278, form.correspondence_pincode, 160)
+    w.text(190, 244, form.mobile, 200)
+    w.text(98, 158, form.dated, 120)
 
 
 def _draw_declaration(w: _Writer, form: CeaForm) -> None:
     for child, y in zip(form.children, (611, 572)):
-        w.lines(111, y, child.name, 84, 3, size=8, leading=9)
-        w.lines(201, y, _school(child), 63, 3, size=7, leading=8)
-        w.lines(270, y, child.current_class, 52, 3, size=7, leading=8)
-        w.text(328, y, child.date_of_birth, 47, 7)
-        w.lines(381, y, _period(child), 55, 3, size=7, leading=8)
-        w.text(443, y, _rupees(child.total), 70, 9)
+        w.lines(112, y, child.name, 84, 3, size=8, leading=9)
+        w.lines(202, y, _school(child), 63, 3, size=7, leading=8)
+        w.lines(272, y, child.current_class, 50, 3, size=7, leading=8)
+        w.text(329, y, child.date_of_birth, 47, 7)
+        w.lines(383, y, _period(child), 53, 3, size=7, leading=8)
+        w.text(444, y, _rupees(child.total), 70, 9)
     w.text(443, 528, _rupees(sum(c.total for c in form.children)), 70, 10)
 
     # "I am a Government Servant / NOT a Government Servant": strike the wrong half.
@@ -571,7 +575,7 @@ def _draw_declaration(w: _Writer, form: CeaForm) -> None:
     elif form.nok_is_govt_servant is True:
         w.strike(314, 472, 447)
 
-    w.text(125, 297, form.dated, 100)
+    w.text(125, 295, form.dated, 100)
     w.text(402, 270, form.nok_name, 150, 9)
     w.text(402, 242, form.service_number, 150, 9)
     w.text(402, 215, form.soldier_rank, 150, 9)
@@ -579,18 +583,19 @@ def _draw_declaration(w: _Writer, form: CeaForm) -> None:
 
 
 def _draw_school(w: _Writer, form: CeaForm, child: CeaChildForm) -> None:
-    w.text(278, 555, child.name, 210)
+    # Each value sits on its blank, level with the printed words of that line.
+    w.text(278, 558, child.name, 210)
     w.text(132, 528, child.admission_number, 88)
     w.text(262, 528, child.date_of_birth, 118)
-    w.text(42, 502, form.nok_name, 170)
-    w.text(398, 502, child.current_class, 42, 9)
-    w.text(481, 502, child.section, 55)
-    w.text(92, 475, child.roll_number, 93)
-    w.text(452, 477, child.period_from, 85)
-    w.text(52, 452, child.period_to, 85)
-    w.text(287, 452, _school(child), 250)
-    w.text(213, 407, child.school_affiliation_code, 62, 9)
-    w.text(350, 407, child.school_board, 42, 8)
+    w.text(42, 499, form.nok_name, 170)
+    w.text(398, 499, child.current_class, 42, 9)
+    w.text(488, 499, child.section, 48)
+    w.text(96, 469, child.roll_number, 89)
+    w.text(446, 469, child.period_from, 90)
+    w.text(58, 440, child.period_to, 75)
+    w.text(294, 440, _school(child), 240)
+    w.text(213, 408, child.school_affiliation_code, 62, 9)
+    w.text(350, 408, child.school_board, 42, 8)
 
 
 def render_pdf(form: CeaForm, source: Path = FORM_PDF) -> bytes:
