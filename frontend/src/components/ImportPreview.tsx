@@ -33,29 +33,52 @@ const ACTION_LABELS: Record<RowPreview["action"], string> = {
   lookalike_in_file: "Possibly the same family twice in this sheet",
   update: "Updates to families you already have",
   create: "New families",
-  unchanged: "Already in the database, no changes, skipped",
-  duplicate_in_file: "Exact copies in this sheet, skipped",
-  skipped: "Cannot be used: no name, skipped. Use Edit to add a name",
+  unchanged: "Already in the database, no changes",
+  duplicate_in_file: "Exact copies in this sheet",
+  skipped: "No name. Use Edit to add one",
   excluded: "You left these out",
 };
 
-// The groups, under what they were compared with. Within each, the ones that
-// need him come first.
-const SECTIONS: { step: string; title: string; hint?: string; actions: RowPreview["action"][] }[] = [
+// The groups, under what he has to do: decide, nothing (added), nothing (skipped).
+// Each heading's colour, on the count pills and the cards' left edge:
+// amber to decide, green to add, grey to skip.
+// Written out in full so Tailwind keeps the classes.
+const TONES = {
+  decide: { pill: "bg-warning/15 text-warning", edge: "border-l-warning/70" },
+  add: { pill: "bg-success/15 text-success", edge: "border-l-success/70" },
+  skip: { pill: "bg-surface-2 text-muted", edge: "border-l-border" },
+};
+
+const Chevron = ({ open }: { open: boolean }) => (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    className={`shrink-0 text-muted transition-transform ${open ? "rotate-90" : ""}`}
+    aria-hidden="true"
+  >
+    <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+type Tone = (typeof TONES)[keyof typeof TONES];
+
+const SECTIONS: { title: string; tone: Tone; actions: RowPreview["action"][] }[] = [
   {
-    step: "1",
-    title: "Excel vs Excel",
-    actions: ["lookalike_in_file", "duplicate_in_file"],
+    title: "Needs your decision",
+    tone: TONES.decide,
+    actions: ["lookalike_in_file", "possible_typo", "needs_decision", "update"],
   },
   {
-    step: "2",
-    title: "Excel vs database",
-    actions: ["possible_typo", "needs_decision", "update", "create", "unchanged"],
+    title: "Will be added",
+    tone: TONES.add,
+    actions: ["create"],
   },
   {
-    step: "–",
-    title: "Not imported",
-    actions: ["excluded", "skipped"],
+    title: "Will be skipped",
+    tone: TONES.skip,
+    actions: ["duplicate_in_file", "unchanged", "excluded", "skipped"],
   },
 ];
 
@@ -87,7 +110,7 @@ function ChangeChoice({
     });
 
   return (
-    <li className={`rounded-lg border px-3 py-2.5 ${change.decision ? "border-border bg-bg" : "border-warning/50 bg-bg"}`}>
+    <li className="rounded-lg border border-border bg-bg px-3 py-2.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <span className="text-[14px] font-medium">{change.label}</span>
         {change.typo ? (
@@ -149,9 +172,9 @@ function ChangeChoice({
 }
 
 const MARK: Record<string, { sign: string; tone: string }> = {
-  "=": { sign: "=", tone: "text-success" },
-  "~": { sign: "≈", tone: "text-warning" },
-  "!=": { sign: "≠", tone: "text-danger" },
+  "=": { sign: "=", tone: "text-muted" },
+  "~": { sign: "≈", tone: "text-text" },
+  "!=": { sign: "≠", tone: "text-text" },
   "": { sign: "", tone: "" },
 };
 
@@ -246,8 +269,8 @@ function PairChoice({ row, busy, send }: { row: RowPreview; busy: boolean; send:
       <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Which row to keep?">
         {(
           [
-            ["first", `Same family, keep row ${other}`],
-            ["second", `Same family, keep row ${row.row_number}`],
+            ["first", `Keep row ${other}`],
+            ["second", `Keep row ${row.row_number}`],
             ["both", "Different families, keep both"],
           ] as const
         ).map(([choice, label]) => (
@@ -360,12 +383,12 @@ function Row({
               <span className="text-xs text-muted">{row.note}</span>
             )}
             {decidable && row.undecided > 0 && (
-              <span className="text-xs font-semibold text-warning">
+              <span className="text-xs font-semibold">
                 {row.undecided} to decide
               </span>
             )}
             {decidable && row.undecided === 0 && (row.changes.length > 0 || row.match_choice) && (
-              <span className="text-xs font-medium text-success">Decided</span>
+              <span className="text-xs text-muted">Decided</span>
             )}
             {row.edited_fields.length > 0 && (
               <span className="text-xs text-accent">
@@ -463,7 +486,9 @@ function Group({
   rows,
   importId,
   onUpdated,
+  tone,
 }: {
+  tone: Tone;
   action: RowPreview["action"];
   rows: RowPreview[];
   importId: number;
@@ -480,19 +505,21 @@ function Group({
   if (rows.length === 0) return null;
 
   return (
-    <div className="mt-4">
+    // A card with a coloured left edge; it opens to show its rows.
+    <li className={`rounded-lg border border-l-4 border-border bg-bg ${tone.edge}`}>
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex min-h-12 w-full items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2.5 text-left"
+        className="flex min-h-11 w-full items-center gap-2.5 rounded-lg px-3 text-left hover:bg-surface-2"
       >
-        <span className="text-[15px] font-medium">
-          {ACTION_LABELS[action]} <span className="text-muted">({rows.length})</span>
+        <span className="min-w-0 flex-1 text-[15px]">{ACTION_LABELS[action]}</span>
+        <span className={`rounded-full px-2 py-0.5 text-[13px] font-semibold tabular-nums ${tone.pill}`}>
+          {rows.length}
         </span>
-        <span className="text-xs text-muted">{open ? "hide" : "show"}</span>
+        <Chevron open={open} />
       </button>
       {open && (
-        <ul className="mt-1">
+        <ul className="mb-3 px-3">
           {rows.map((row) => (
             <Row
               key={row.row_number}
@@ -503,7 +530,7 @@ function Group({
           ))}
         </ul>
       )}
-    </div>
+    </li>
   );
 }
 
@@ -674,28 +701,20 @@ export default function ImportPreview({
       <PreviewColumns preview={preview} onUpdated={setPreview} />
 
       {sections.map((section) => (
-        <section key={section.title} className="mt-7">
-          <div className="flex items-start gap-3 border-l-4 border-accent pl-3">
-            <span
-              className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[14px] font-semibold text-accent-fg"
-              aria-hidden="true"
-            >
-              {section.step}
-            </span>
-            <div className="min-w-0">
-              <h3 className="text-[17px] font-semibold leading-snug">{section.title}</h3>
-              {section.hint && <p className="mt-0.5 text-[14px] leading-relaxed text-muted">{section.hint}</p>}
-            </div>
-          </div>
-          {section.groups.map(({ action, rows }) => (
-            <Group
-              key={action}
-              action={action}
-              rows={rows}
-              importId={importId}
-              onUpdated={setPreview}
-            />
-          ))}
+        <section key={section.title} className="mt-6">
+          <h3 className="text-[17px] font-semibold">{section.title}</h3>
+          <ul className="mt-2 space-y-2">
+            {section.groups.map(({ action, rows }) => (
+              <Group
+                key={action}
+                action={action}
+                rows={rows}
+                importId={importId}
+                onUpdated={setPreview}
+                tone={section.tone}
+              />
+            ))}
+          </ul>
         </section>
       ))}
 
