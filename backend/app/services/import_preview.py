@@ -3,6 +3,11 @@
 The colonel sees this before he commits: how many families are new, which
 existing records would change and in what way, which rows look like duplicates,
 and which rows have problems.
+
+Nothing about an existing family changes without his say. Every value that
+would change (an update, or a likely typo) needs his choice: keep the
+database value, take the sheet's, or type the right one. A row that only
+might be a family we have needs him to say whether it is.
 """
 
 from __future__ import annotations
@@ -18,19 +23,23 @@ from app.services.excel_reader import SheetData
 from app.services.matching import (
     Candidate,
     FamilyIndex,
-    signature_for_duplicate_check,
+    SheetIndex,
+    facts_of,
 )
 from app.models.custom_field import EXTRA_PREFIX
 from app.services.children import child_differences, match_child, sheet_children
 from app.services.row_parser import ParsedRow, apply_overrides, parse_row
+from app.services.typos import typo_reason
 
 
 class RowAction(str, Enum):
     create = "create"  # a family we do not have
     update = "update"  # changes an existing family
+    possible_typo = "possible_typo"  # changes an existing family, some changes look like typos
     unchanged = "unchanged"  # we already have this, nothing differs
     needs_decision = "needs_decision"  # might be an existing family, not sure
-    duplicate_in_file = "duplicate_in_file"  # the same person twice in this sheet
+    duplicate_in_file = "duplicate_in_file"  # an exact copy of an earlier row in this sheet
+    lookalike_in_file = "lookalike_in_file"  # might be the same family as an earlier row
     skipped = "skipped"  # too little to work with
     excluded = "excluded"  # he asked for this row to be left out
 
@@ -83,12 +92,29 @@ SOLDIER_FIELDS = {
 # preview, but written to separate child records rather than to the family.
 
 
+# What he chose for one changed value.
+KEEP, EXCEL, TYPED = "keep", "excel", "typed"
+# What he chose for a row that might be a family we have.
+SAME, NEW, LEAVE = "same", "new", "leave"
+# What he chose for two rows of this sheet that look like one family:
+# keep the earlier row only, this row only, or both as different families.
+FIRST, SECOND, BOTH = "first", "second", "both"
+# Two rows this alike are worth asking about (the same floor as the database check).
+LOOKALIKE_SCORE = 40
+
+
 @dataclass
 class FieldChange:
     field_name: str
     label: str
     old_value: str | None
     new_value: str | None
+    # The sheet field it comes from ("phone", "child1_dob"), for typing a correction.
+    field_key: str = ""
+    # Why it looks like a typo ("Only 1 digit different"), or None for a real update.
+    typo: str | None = None
+    # keep / excel / typed, or None while he hasn't chosen.
+    decision: str | None = None
 
 
 @dataclass
@@ -120,6 +146,22 @@ class RowPreview:
     changes: list[FieldChange] = field(default_factory=list)
     problems: list[dict[str, str]] = field(default_factory=list)
     duplicate_of_row: int | None = None
+    # For a possible duplicate: same / new / leave, or None while undecided.
+    match_choice: str | None = None
+    # For a possible duplicate: the sheet and the database side by side.
+    comparison: list[dict[str, str | None]] = field(default_factory=list)
+    # How many choices this row still needs from him.
+    undecided: int = 0
+    # Another row of this sheet it looks like, and how alike (0-100).
+    pair_with_row: int | None = None
+    pair_score: int = 0
+    pair_reasons: list[str] = field(default_factory=list)
+    # first / second / both, or None while undecided.
+    pair_choice: str | None = None
+    # The two rows side by side: "excel" is the other row, "database" this one.
+    pair_comparison: list[dict[str, str | None]] = field(default_factory=list)
+    # A plain sentence about why this row is where it is, when it isn't obvious.
+    note: str | None = None
 
 
 @dataclass
@@ -128,11 +170,14 @@ class ImportPreview:
     counts: dict[str, int]
     rows: list[RowPreview]
     problem_count: int
+    # Rows still waiting for his choice, by group. Import is refused until 0.
+    undecided: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "total_rows": self.total_rows,
             "counts": self.counts,
+            "undecided": self.undecided,
             "problem_count": self.problem_count,
             "rows": [
                 {**asdict(r), "action": r.action.value} for r in self.rows
@@ -193,6 +238,7 @@ def diff_against_family(
                     labels.get(key, key.replace("_", " ").capitalize()),
                     _as_text(old_value),
                     _as_text(new_value),
+                    field_key=f"{EXTRA_PREFIX}{key}",
                 )
             )
 
@@ -203,12 +249,18 @@ def diff_against_family(
         old_value = getattr(family, column, None)
         if not same_value(old_value, new_value):
             changes.append(
-                FieldChange(column, _label(key), _as_text(old_value), _as_text(new_value))
+                FieldChange(
+                    column, _label(key), _as_text(old_value), _as_text(new_value),
+                    field_key=key,
+                )
             )
 
     soldier = family.soldier
     if soldier is not None:
         for key, column in SOLDIER_FIELDS.items():
+            # The category is worked out from the cause he wrote, and follows it.
+            if key == "cause_category":
+                continue
             new_value = row.values.get(key)
             if new_value is None or new_value == "":
                 continue
@@ -217,9 +269,10 @@ def diff_against_family(
                 changes.append(
                     FieldChange(
                         f"soldier.{column}",
-                        _label(key),
+                        _label("cause_of_death" if key == "cause_sub_category" else key),
                         _as_text(old_value),
                         _as_text(new_value),
+                        field_key="cause_of_death" if key == "cause_sub_category" else key,
                     )
                 )
 
@@ -235,6 +288,7 @@ def diff_against_family(
                     f"Child {child.slot}",
                     None,
                     f"{child.name} (new child)",
+                    field_key=f"child{child.slot}_name",
                 )
             )
             continue
@@ -246,10 +300,113 @@ def diff_against_family(
                     f"Child {child.slot} {part}",
                     _as_text(old),
                     _as_text(new),
+                    field_key=f"child{child.slot}_{CHILD_KEYS.get(column, column)}",
                 )
             )
 
     return changes
+
+
+# A child record's column -> the sheet field part (child1_dob, child1_sex).
+CHILD_KEYS = {"full_name": "name", "date_of_birth": "dob", "gender": "sex"}
+
+
+def decide_changes(
+    changes: list[FieldChange], decisions: dict[str, str], typed: set[str]
+) -> int:
+    """Mark each change as a likely typo or not, and with his choice so far.
+
+    A value he typed himself counts as decided. Returns how many changes are
+    still waiting for a choice.
+    """
+    waiting = 0
+    for change in changes:
+        change.typo = typo_reason(change.field_name, change.old_value, change.new_value)
+        if change.field_key in typed:
+            change.decision = TYPED
+        else:
+            change.decision = decisions.get(change.field_name)
+        if change.decision is None:
+            waiting += 1
+    return waiting
+
+
+def side_by_side(row: ParsedRow, family: Family) -> list[dict[str, str | None]]:
+    """The details that tell two families apart, the sheet next to the database.
+
+    mark: "=" the same, "~" spelt or typed slightly differently, "!=" different,
+    "" when one side is empty.
+    """
+    soldier = family.soldier
+    pairs = [
+        ("Name of NOK", "primary_contact_name", row.values.get("widow_name"), family.primary_contact_name),
+        ("Soldier", "soldier.full_name", row.values.get("soldier_name"), soldier.full_name if soldier else None),
+        ("Army number", "soldier.service_number", row.values.get("service_number"), soldier.service_number if soldier else None),
+        ("Date of death", "soldier.date_of_death", row.values.get("date_of_death"), soldier.date_of_death if soldier else None),
+        ("Relationship", "nok_relationship", row.values.get("nok_relationship"), family.nok_relationship),
+        ("Phone", "primary_phone", row.values.get("phone"), family.primary_phone),
+        ("Village", "village_or_town", row.values.get("village_or_town"), family.village_or_town),
+        ("District", "district", row.values.get("district"), family.district),
+        ("State", "state", row.values.get("state"), family.state),
+    ]
+    out: list[dict[str, str | None]] = []
+    for label, name, sheet_value, db_value in pairs:
+        excel, database = _as_text(sheet_value), _as_text(db_value)
+        if not excel and not database:
+            continue
+        if not excel or not database:
+            mark = ""
+        elif same_value(excel, database):
+            mark = "="
+        elif typo_reason(name, database, excel):
+            mark = "~"
+        else:
+            mark = "!="
+        out.append({"label": label, "excel": excel, "database": database, "mark": mark})
+    return out
+
+
+def same_row(a: ParsedRow, b: ParsedRow) -> bool:
+    """Every value the same (ignoring capitals and spacing): an exact copy."""
+    keys = set(a.values) | set(b.values)
+    extras = set(a.extra_fields) | set(b.extra_fields)
+    return all(same_value(a.values.get(k), b.values.get(k)) for k in keys) and all(
+        same_value(a.extra_fields.get(k), b.extra_fields.get(k)) for k in extras
+    )
+
+
+def rows_side_by_side(first: ParsedRow, second: ParsedRow) -> list[dict[str, str | None]]:
+    """Two sheet rows next to each other, marked as in side_by_side.
+
+    "excel" holds the earlier row and "database" this one, so the screen can
+    reuse one table; the labels on screen say which row is which.
+    """
+    pairs = [
+        ("Name of NOK", "primary_contact_name", "widow_name"),
+        ("Soldier", "soldier.full_name", "soldier_name"),
+        ("Army number", "soldier.service_number", "service_number"),
+        ("Date of death", "soldier.date_of_death", "date_of_death"),
+        ("Relationship", "nok_relationship", "nok_relationship"),
+        ("Phone", "primary_phone", "phone"),
+        ("Village", "village_or_town", "village_or_town"),
+        ("District", "district", "district"),
+        ("State", "state", "state"),
+    ]
+    out: list[dict[str, str | None]] = []
+    for label, name, key in pairs:
+        a, b = _as_text(first.values.get(key)), _as_text(second.values.get(key))
+        if not a and not b:
+            continue
+        if not a or not b:
+            mark = ""
+        elif same_value(a, b):
+            mark = "="
+        elif typo_reason(name, a, b):
+            mark = "~"
+        else:
+            mark = "!="
+        out.append({"label": label, "excel": a, "database": b, "mark": mark})
+    return out
 
 
 def _candidate_dict(candidate: Candidate) -> dict[str, Any]:
@@ -359,10 +516,13 @@ def build_preview(
     families_by_id = {f.id: f for f in index.families}
 
     rows: list[RowPreview] = []
-    seen_signatures: dict[str, int] = {}
     problem_count = 0
+    # Rows that go on to be compared with the database: (preview, parsed, his choices).
+    to_match: list[tuple[RowPreview, ParsedRow, dict]] = []
 
+    # 1. Read every row, with his corrections.
     total = len(sheet.rows)
+    readable: list[tuple[RowPreview, ParsedRow, dict]] = []
     for position, raw_row in enumerate(sheet.rows):
         if on_progress:
             on_progress("checking", position + 1, total)
@@ -390,13 +550,13 @@ def build_preview(
                 for p in parsed.problems
             ],
         )
+        rows.append(preview)
         if preview.problems:
             problem_count += 1
 
         # He asked for this row to be left out. Say so, and stop here.
         if parsed.skipped_by_user:
             preview.action = RowAction.excluded
-            rows.append(preview)
             continue
 
         if parsed.has_blocking_problem:
@@ -406,21 +566,57 @@ def build_preview(
                     "field": "widow_name",
                     "code": "missing_name",
                     "severity": "high",
-                    "message": "No widow's name and no soldier's name â€” nothing to go on",
+                    "message": "No widow's name and no soldier's name — nothing to go on",
                 }
             )
-            rows.append(preview)
             continue
+        readable.append((preview, parsed, overrides.get(str(row_number)) or {}))
 
-        # The same person appearing twice in this one sheet.
-        signature = signature_for_duplicate_check(parsed)
-        if signature and signature in seen_signatures:
-            preview.action = RowAction.duplicate_in_file
-            preview.duplicate_of_row = seen_signatures[signature]
-            rows.append(preview)
-            continue
-        if signature:
-            seen_signatures[signature] = row_number
+    # 2. The same family twice in this sheet. An exact copy is skipped by
+    #    itself; rows that only look alike wait for him to say which to keep.
+    sheet_index = SheetIndex()
+    by_position: dict[int, tuple[RowPreview, ParsedRow, dict]] = {}
+    dropped: set[int] = set()
+    for position, (preview, parsed, own) in enumerate(readable):
+        facts = facts_of(position, parsed)
+        found = sheet_index.best(facts)
+        if found and found[1] >= LOOKALIKE_SCORE:
+            earlier_facts, score, reasons = found
+            earlier, earlier_parsed, _ = by_position[earlier_facts.position]
+            if same_row(parsed, earlier_parsed):
+                preview.action = RowAction.duplicate_in_file
+                preview.duplicate_of_row = earlier.row_number
+                preview.note = f"An exact copy of row {earlier.row_number}, so it is skipped."
+                continue
+
+            preview.pair_with_row = earlier.row_number
+            preview.pair_score = score
+            preview.pair_reasons = reasons
+            preview.pair_comparison = rows_side_by_side(earlier_parsed, parsed)
+            preview.pair_choice = own.get("pair")
+            if preview.pair_choice is None:
+                preview.action = RowAction.lookalike_in_file
+                preview.undecided = 1
+            elif preview.pair_choice == FIRST:
+                preview.action = RowAction.excluded
+                preview.note = f"Left out: you kept row {earlier.row_number} for this family."
+                continue
+            elif preview.pair_choice == SECOND:
+                dropped.add(earlier.row_number)
+                earlier.action = RowAction.excluded
+                earlier.note = f"Left out: you kept row {preview.row_number} for this family."
+
+        sheet_index.add(facts)
+        by_position[position] = (preview, parsed, own)
+
+    for preview, parsed, own in by_position.values():
+        if preview.row_number not in dropped and preview.action != RowAction.lookalike_in_file:
+            to_match.append((preview, parsed, own))
+
+    # 3. Each row left is compared with the families we already have.
+    for preview, parsed, own in to_match:
+        decisions = own.get("decisions") or {}
+        typed = set(parsed.edited_fields)
 
         match = index.find(parsed)
         if match.best:
@@ -433,23 +629,39 @@ def build_preview(
         if match.is_confident and match.best:
             family = families_by_id[match.best.family_id]
             preview.changes = diff_against_family(parsed, family, labels)
-            preview.action = (
-                RowAction.update if preview.changes else RowAction.unchanged
-            )
-        elif match.is_uncertain:
+            preview.undecided = decide_changes(preview.changes, decisions, typed)
+            if not preview.changes:
+                preview.action = RowAction.unchanged
+            elif any(c.typo for c in preview.changes):
+                preview.action = RowAction.possible_typo
+            else:
+                preview.action = RowAction.update
+        elif match.is_uncertain and match.best:
+            family = families_by_id[match.best.family_id]
             preview.action = RowAction.needs_decision
+            preview.comparison = side_by_side(parsed, family)
+            preview.match_choice = own.get("match")
+            if preview.match_choice == SAME:
+                # He says it is that family: its changes need his choice too.
+                preview.changes = diff_against_family(parsed, family, labels)
+                preview.undecided = decide_changes(preview.changes, decisions, typed)
+            elif preview.match_choice is None:
+                preview.undecided = 1
         else:
             preview.action = RowAction.create
 
-        rows.append(preview)
 
     counts = {action.value: 0 for action in RowAction}
+    undecided: dict[str, int] = {}
     for row in rows:
         counts[row.action.value] += 1
+        if row.undecided:
+            undecided[row.action.value] = undecided.get(row.action.value, 0) + 1
 
     return ImportPreview(
         total_rows=len(rows),
         counts=counts,
         rows=rows,
         problem_count=problem_count,
+        undecided=undecided,
     )

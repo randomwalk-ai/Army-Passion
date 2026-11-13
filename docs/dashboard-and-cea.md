@@ -192,24 +192,47 @@ a page saying so, rather than failing the whole download.
 
 ## The families table
 
-`app/services/family_table.py` holds `COLUMNS`: for each column, where the
-value lives (`family`, `soldier`, `extra` for approved custom fields, or
-`computed` such as Documents and Children), the cleaner (the same
-`parse_phone`, `parse_date`, `parse_pincode`, `parse_ifsc`… as the import),
-and whether it is required. To add a column, add one line there — the screen
-builds itself from the list. Approved extra fields appear as columns
-automatically.
+`app/services/family_table.py` holds `COLUMNS`: **every detail the database
+holds**, so nothing is hidden (the table scrolls sideways). For each column:
+where the value lives (`family`, `soldier`, `child`, `extra` for approved
+custom fields, or `computed` such as Documents and Number of children), the
+cleaner (the same `parse_phone`, `parse_date`, `parse_pincode`, `parse_ifsc`…
+as the import), whether it is required, and its `group` — the heading it sits
+under in the family panel (Next of kin, Soldier, Address, Children, Child 1,
+Child 2, Child 3, Pension and bank, Unit contact, CEA, Other, Extra fields).
+This includes the fields only the forms ask for (each child's school details,
+govt servant, duty status...). Only system values (ids, map points,
+timestamps) are left out. To add a column, add one
+line there — the screen builds itself from the list. Approved extra fields
+appear as columns automatically.
+
+Profile: `completeness()` gives each family 0-100% — every column counts
+(Documents = at least one, Number of children = at least one) except the
+scheme answers and the details of children who don't exist. Rounded down, so
+100% means nothing is missing. Shown as a ring after the name and at the top
+of the family panel with the list of what is missing. Sorting by it
+(`sort=profile`) is worked out in Python over all matching families, then
+one page is cut out, so the order is right across pages.
+
+Children: Child 1, 2 and 3 are the family's children **oldest first** (by
+date of birth; children without one come last). A name typed into the next
+empty child adds that child; other details of an empty child, or skipping a
+child (Child 3 before Child 2), are refused. Setting a child's sex makes them
+a son or daughter; Cause of death also files the soldier under a category;
+GPS location also moves the family's map point.
 
 Editing a cell: a blank box clears the value (allowed here because it is a
 deliberate act) unless the column is required; an unchanged value writes
 nothing; every change writes `field_history` (source `officer_entry`,
 reference "Families table") and an `audit_log` row `family.update`.
 
-On screen: Editing is **off** by default so the table can be read without
-accidental changes. Computer: click a box, Enter saves, Esc cancels, Tab
-saves and moves right. Phone: the table scrolls sideways with the name
-pinned; tapping a name opens the family panel (bottom sheet) where each value
-has a big **Change** button, plus the documents.
+On screen: the table is read-only, so a stray click can change nothing
+(nothing in it is clickable except the ✏️). The ✏️ next to a name is the only
+way in: it opens the family panel (side panel on a computer, bottom sheet on a
+phone) with what they can claim, the documents, and every value with a
+**Change** button. A value is saved only by pressing **Save**: Enter does
+nothing, and Cancel, Esc or closing the panel throws the change away. On a
+phone the table scrolls sideways with the name pinned.
 
 ---
 

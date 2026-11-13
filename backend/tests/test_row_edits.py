@@ -11,6 +11,7 @@ from openpyxl import Workbook
 from sqlalchemy import select
 
 from app.db import get_session
+from tests.decide import take_the_sheet_via_api
 from app.main import app
 from app.models import Family, FieldHistory, ImportBatch
 from app.models.enums import ChangeSource
@@ -280,6 +281,7 @@ def test_history_says_the_colonel_changed_it_not_the_file(client, tx_db):
         f"/api/imports/{import_id}/rows/{row['row_number']}",
         json={"values": {"phone": "9876566666"}},
     )
+    take_the_sheet_via_api(client, import_id)
     result = client.post(f"/api/imports/{import_id}/commit").json()
     assert result["fields_corrected"] >= 1
 

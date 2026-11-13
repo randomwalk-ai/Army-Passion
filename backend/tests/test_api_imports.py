@@ -240,3 +240,40 @@ def test_importing_reports_what_it_did(client):
     assert result["created"] == 1
     assert result["status"] == "imported"
     assert len(result["new_family_codes"]) == 1
+
+
+# --- remembering a layout -----------------------------------------------------
+
+
+def _with_door_no() -> bytes:
+    book = Workbook()
+    sheet = book.active
+    sheet.append(HEADERS + ["Door No"])
+    sheet.append(NEW_ROW + ["12-A"])
+    buffer = io.BytesIO()
+    book.save(buffer)
+    return buffer.getvalue()
+
+
+def _upload_door_no(client):
+    response = client.post(
+        "/api/imports/upload",
+        files={"file": ("door.xlsx", _with_door_no(), "application/octet-stream")},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_leave_out_counts_for_that_upload_only(client):
+    first = _upload_door_no(client)
+    mapping = full_mapping(first["columns"])
+    assert mapping["Door No"] == "__ignore__"  # he chose "Leave out"
+    saved = client.put(f"/api/imports/{first['import_id']}/mapping", json={"mapping": mapping})
+    assert saved.status_code == 200, saved.text
+
+    again = {c["source_heading"]: c for c in _upload_door_no(client)["columns"]}
+    # Asked again next time, not silently skipped...
+    assert again["Door No"]["target_key"] != "__ignore__"
+    # ...while what we skip ourselves, and what was matched, is still remembered.
+    assert again["S.No"]["target_key"] == "__ignore__"
+    assert again["Name of Widow"]["reason"] == "You set this last time"

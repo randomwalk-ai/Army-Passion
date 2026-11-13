@@ -73,6 +73,8 @@ class TableColumnOut(BaseModel):
     sortable: bool
     required: bool
     choices: list[str]
+    # The heading it sits under in the family panel.
+    group: str
 
 
 class SchemeVerdictOut(BaseModel):
@@ -87,6 +89,8 @@ class TableRowOut(BaseModel):
     values: dict[str, str | int | None]
     # One verdict per scheme, keyed by scheme code ("CEA").
     eligibility: dict[str, SchemeVerdictOut] = {}
+    # The details still empty, behind the profile percentage.
+    missing: list[str] = []
 
 
 class TableFilterOut(BaseModel):
@@ -102,6 +106,21 @@ class TableOut(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class ProfileSpreadOut(BaseModel):
+    # counts[p] = how many families are exactly p% complete (p = 0..100).
+    counts: list[int]
+    total: int
+    average: float
+    # Standard deviation: how widely the percentages are spread around the average.
+    spread: float
+
+
+@router.get("/profile-spread", response_model=ProfileSpreadOut)
+def profile_spread(session: Session = Depends(get_session)) -> ProfileSpreadOut:
+    """How complete the profiles are across all families, for the bell curve."""
+    return ProfileSpreadOut(**family_table.profile_spread(session))
 
 
 @router.get("/table", response_model=TableOut)
@@ -129,6 +148,7 @@ def families_table(
             TableColumnOut(
                 key=c.key, label=c.label, kind=c.kind, editable=c.editable,
                 sortable=c.sortable, required=c.required, choices=list(c.choices),
+                group=c.group,
             )
             for c in result.columns
         ],

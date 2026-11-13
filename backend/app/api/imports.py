@@ -28,6 +28,7 @@ from app.api.schemas import (
     MappingIn,
     MappingResponse,
     PreviewResponse,
+    RowDecisionIn,
     RowEditIn,
     TargetFieldOut,
     UploadResponse,
@@ -51,7 +52,7 @@ from app.services.column_mapping import (
 )
 from app.services.llm import get_llm
 from app.services.excel_reader import SheetData, read_sheet
-from app.services.import_apply import apply_import
+from app.services.import_apply import UndecidedRows, apply_import
 from app.services.import_preview import build_preview
 from app.services.import_progress import ProgressTracker
 from app.services.storage import get_storage
@@ -181,6 +182,11 @@ async def upload_sheet(
     if saved:
         for guess in guesses:
             remembered = saved.mapping.get(guess.source_heading)
+            # "Leave out" counts for that upload only: a column he left out
+            # is asked about again next time, unless we skip it ourselves
+            # anyway (S NO, DOCUMENTS 1-4).
+            if remembered == IGNORE and guess.target_key != IGNORE:
+                continue
             if remembered:
                 guess.target_key = remembered
                 guess.confidence = 100
@@ -425,11 +431,55 @@ def edit_row(
             )
 
     overrides = dict(batch.row_overrides or {})
-    entry = {"skip": body.skip, "values": dict(body.values)}
-    if not body.skip and not body.values:
+    # His choices on this row (keep / take the sheet's, same family or not) stay.
+    before = overrides.get(str(row_number)) or {}
+    entry = {
+        **{k: v for k, v in before.items() if k in ("decisions", "match", "pair")},
+        "skip": body.skip,
+        "values": dict(body.values),
+    }
+    if not body.skip and not body.values and len(entry) == 2:
         overrides.pop(str(row_number), None)  # back to what the file said
     else:
         overrides[str(row_number)] = entry
+    batch.row_overrides = overrides
+    session.commit()
+
+    return _build_preview_response(session, batch)
+
+
+@router.put("/{import_id}/rows/{row_number}/decision", response_model=PreviewResponse)
+def decide_row(
+    import_id: int,
+    row_number: int,
+    body: RowDecisionIn,
+    session: Session = Depends(get_session),
+) -> PreviewResponse:
+    """His choice for values that would change (keep the database's, or take
+    the sheet's), or whether a possible duplicate is the same family."""
+    batch = session.get(ImportBatch, import_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="That upload was not found.")
+    if batch.status == ImportStatus.imported:
+        raise HTTPException(
+            status_code=409, detail="This sheet has already been imported."
+        )
+    _require_mapping(batch)
+
+    overrides = dict(batch.row_overrides or {})
+    entry = dict(overrides.get(str(row_number)) or {"skip": False, "values": {}})
+    entry["decisions"] = {**(entry.get("decisions") or {}), **body.decisions}
+    if body.clear_typed:
+        entry["values"] = {
+            k: v for k, v in (entry.get("values") or {}).items() if k not in body.clear_typed
+        }
+    if body.match is not None:
+        entry["match"] = body.match
+    if body.pair == "undo":
+        entry.pop("pair", None)
+    elif body.pair is not None:
+        entry["pair"] = body.pair
+    overrides[str(row_number)] = entry
     batch.row_overrides = overrides
     session.commit()
 
@@ -640,6 +690,10 @@ def commit_import(
     tracker = ProgressTracker(batch.id)
     try:
         outcome = apply_import(session, batch, sheet, on_progress=tracker.update)
+    except UndecidedRows as exc:
+        # Refused before anything was written; his upload and choices stay.
+        tracker.clear()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         session.rollback()
         tracker.clear()

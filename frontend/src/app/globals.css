@@ -9,6 +9,9 @@
    menu); brass is used sparingly, like insignia (the active menu item, the
    short rule above page titles). Pages stay warm off-white with white cards. */
 :root {
+  /* How strongly the saffron and green glows show (light / dark set separately). */
+  --glow-low: 0.16;
+  --glow-high: 0.26;
   --bg: #f5f3ec;
   --surface: #ffffff;
   --surface-2: #ece9de;
@@ -31,6 +34,8 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    --glow-low: 0.08;
+    --glow-high: 0.14;
     --bg: #12150f;
     --surface: #1a1e16;
     --surface-2: #252a1f;
@@ -52,6 +57,8 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
+  --glow-low: 0.08;
+  --glow-high: 0.14;
   --bg: #12150f;
   --surface: #1a1e16;
   --surface-2: #252a1f;
@@ -219,19 +226,97 @@ textarea {
   to { transform: translate3d(-4%, -3%, 0) scale(1.06); }
 }
 
-/* Two very soft glows behind every page, saffron and green, slowly breathing. */
+/* Two soft glows behind every page, saffron top-right and green bottom-left
+   (the page's off-white between them), slowly breathing. */
 .ambient-glow {
   position: absolute;
   border-radius: 9999px;
   filter: blur(80px);
-  opacity: 0.1;
+  opacity: var(--glow-low);
   animation: glow-breathe 18s ease-in-out infinite alternate;
 }
 .ambient-glow.saffron { background: var(--saffron); }
 .ambient-glow.green { background: var(--india-green); animation-delay: -9s; }
+/* Look 2: the whole page washed in the flag's order, saffron at the top,
+   the page's off-white in the middle, green at the bottom. */
+.flag-wash {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--saffron) calc(var(--glow-high) * 100%), transparent) 0%,
+    transparent 30%,
+    transparent 70%,
+    color-mix(in srgb, var(--india-green) calc(var(--glow-high) * 100%), transparent) 100%
+  );
+}
+.tricolour.thick {
+  height: 6px;
+}
+/* Look 6: a still stripe, like an official letterhead (no moving light). */
+.tricolour.still::after {
+  display: none;
+}
+
+/* Look 3: a diagonal wash, saffron from the top-left to green at the
+   bottom-right, and the tricolour running down beside the menu. */
+.flag-diagonal {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--saffron) calc(var(--glow-high) * 100%), transparent) 0%,
+    transparent 38%,
+    transparent 62%,
+    color-mix(in srgb, var(--india-green) calc(var(--glow-high) * 100%), transparent) 100%
+  );
+}
+/* Look 4: the Ashoka Chakra, large and faint, turning very slowly. */
+.chakra-watermark {
+  color: #000080;
+  opacity: 0.06;
+  animation: chakra-turn 240s linear infinite;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chakra-watermark { color: #8fa3ff; opacity: 0.07; }
+}
+:root[data-theme="dark"] .chakra-watermark { color: #8fa3ff; opacity: 0.07; }
+@keyframes chakra-turn {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chakra-watermark { animation: none; }
+}
+
+/* Look 5: the flag waving across the top of the page, drifting slowly. */
+.flag-wave {
+  opacity: calc(var(--glow-high) * 1.6);
+}
+/* Look 7: the same waves, softer, over the Look 2 wash. */
+.flag-wave.soft {
+  opacity: var(--glow-high);
+}
+.flag-wave .drift {
+  /* Half the band's own width is one full wave, so the loop is seamless. */
+  transform-box: fill-box;
+  animation: flag-drift 30s linear infinite;
+}
+@keyframes flag-drift {
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flag-wave .drift { animation: none; }
+}
+
+.tricolour-down {
+  width: 5px;
+  background: linear-gradient(
+    to bottom,
+    var(--saffron) 0 33.34%,
+    #ffffff 33.34% 66.67%,
+    var(--india-green) 66.67% 100%
+  );
+}
+
 @keyframes glow-breathe {
-  from { transform: translate3d(0, 0, 0) scale(1); opacity: 0.07; }
-  to { transform: translate3d(3%, 4%, 0) scale(1.15); opacity: 0.12; }
+  from { transform: translate3d(0, 0, 0) scale(1); opacity: var(--glow-low); }
+  to { transform: translate3d(3%, 4%, 0) scale(1.15); opacity: var(--glow-high); }
 }
 
 /* Cards and tiles rise into place one after another. Set --i on each. */

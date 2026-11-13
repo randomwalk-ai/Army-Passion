@@ -29,6 +29,10 @@ from app.models.enums import ChangeSource, IssueCode, IssueSeverity, IssueStatus
 from app.services.excel_reader import SheetData
 from app.services.import_preview import (
     FAMILY_FIELDS,
+    KEEP,
+    LEAVE,
+    NEW,
+    SAME,
     row_override,
     same_value,
     SOLDIER_FIELDS,
@@ -82,6 +86,7 @@ def _apply_children(
     parsed,
     batch: ImportBatch,
     now: datetime,
+    kept: set[str] | frozenset[str] = frozenset(),
 ) -> int:
     """Add or update the children in this row. Returns fields changed.
 
@@ -96,6 +101,8 @@ def _apply_children(
     for child in sheet_children(parsed.values):
         member = match_child(child, members, taken)
         if member is None:
+            if f"child.{child.slot}" in kept:
+                continue  # he chose not to add this child
             member = new_member(family.id, child)
             session.add(member)
             session.flush()
@@ -110,6 +117,8 @@ def _apply_children(
 
         taken.add(member.id)
         for column, _part, old, new in child_differences(child, member):
+            if f"child.{child.slot}.{column}" in kept:
+                continue
             by_officer = f"child{child.slot}_{_child_key(column)}" in parsed.edited_fields
             _history(
                 session, "family_member", member.id, column, old, new,
@@ -343,7 +352,7 @@ def _save_group(
 
         # It might be the same family under a different spelling: say so.
         preview = item.row_preview
-        if preview.action == RowAction.needs_decision:
+        if preview.action == RowAction.needs_decision and preview.match_choice is None:
             _raise_issue(
                 session,
                 family.id,
@@ -375,6 +384,10 @@ def _save_group(
     waiting.clear()
 
 
+class UndecidedRows(ValueError):
+    """Some rows still need his choice; nothing is written until they have it."""
+
+
 def apply_import(
     session: Session,
     batch: ImportBatch,
@@ -401,6 +414,13 @@ def apply_import(
     waiting: list[_NewFamily] = []
     codes = family_codes(session)
     total = len(sheet.rows)
+
+    waiting_rows = sum(preview.undecided.values())
+    if waiting_rows:
+        raise UndecidedRows(
+            f"Decide {waiting_rows} row{'s' if waiting_rows != 1 else ''} first, "
+            "then import."
+        )
 
     previews_by_row = {p.row_number: p for p in preview.rows}
 
@@ -431,19 +451,30 @@ def apply_import(
             outcome.unchanged += 1
             continue
 
+        choice = row_preview.match_choice
+        if row_preview.action == RowAction.needs_decision and choice == LEAVE:
+            outcome.excluded += 1
+            continue
+
+        is_update = row_preview.action in (RowAction.update, RowAction.possible_typo) or (
+            row_preview.action == RowAction.needs_decision and choice == SAME
+        )
+
         # --- an existing family changes ---
-        if row_preview.action == RowAction.update and row_preview.matched_family_id:
+        if is_update and row_preview.matched_family_id:
             family = session.get(Family, row_preview.matched_family_id)
             if family is None:
                 outcome.skipped += 1
                 continue
+            # Values he chose to keep as the database has them.
+            kept = {c.field_name for c in row_preview.changes if c.decision == KEEP}
 
             for key, column in FAMILY_FIELDS.items():
                 new_value = parsed.values.get(key)
                 if new_value is None or new_value == "":
                     continue
                 old_value = getattr(family, column, None)
-                if same_value(old_value, new_value):
+                if same_value(old_value, new_value) or column in kept:
                     continue
                 by_officer = key in parsed.edited_fields
                 _history(
@@ -464,7 +495,9 @@ def apply_import(
                     if new_value is None or new_value == "":
                         continue
                     old_value = getattr(soldier, column, None)
-                    if same_value(old_value, new_value):
+                    # The category follows the cause he wrote.
+                    follows = "cause_sub_category" if column == "cause_category" else column
+                    if same_value(old_value, new_value) or f"soldier.{follows}" in kept:
                         continue
                     by_officer = key in parsed.edited_fields
                     _history(
@@ -484,7 +517,7 @@ def apply_import(
                     if not new_value:
                         continue
                     old_value = pocket.get(key)
-                    if same_value(old_value, new_value):
+                    if same_value(old_value, new_value) or f"extra.{key}" in kept:
                         continue
                     _history(
                         session, "family", family.id, f"extra.{key}",
@@ -496,7 +529,7 @@ def apply_import(
                 family.extra_fields = pocket
 
             outcome.fields_changed += _apply_children(
-                session, family, parsed, batch, now
+                session, family, parsed, batch, now, kept
             )
 
             family.last_verified_on = date.today()
@@ -504,7 +537,9 @@ def apply_import(
             target_family_id = family.id
 
         # --- a family we have not seen before ---
-        elif row_preview.action in (RowAction.create, RowAction.needs_decision):
+        elif row_preview.action == RowAction.create or (
+            row_preview.action == RowAction.needs_decision and choice == NEW
+        ):
             # Built in memory and saved with its group (see _save_group), so a
             # big sheet does not need several database trips per family.
             # Every mapped soldier and family field is copied across, so a
@@ -553,8 +588,6 @@ def apply_import(
             outcome.created += 1
             outcome.new_family_codes.append(code)
             used_extra_keys.update(k for k, v in parsed.extra_fields.items() if v)
-            if row_preview.action == RowAction.needs_decision:
-                outcome.needs_decision += 1
 
             waiting.append(_NewFamily(
                 family=family, code=code, children=children, row_number=row_number,

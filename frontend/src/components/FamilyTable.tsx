@@ -1,13 +1,13 @@
 "use client";
 
 /**
- * Every family as one table, like his Excel sheet: read it, search it, sort
- * it, and (with Editing switched on) correct a value in place.
+ * Every family as one table, like his Excel sheet: read it, search it, sort it.
  *
- * On a computer he clicks a box and types. On a phone the table scrolls
- * sideways with the name pinned on the left, and tapping a name opens the
- * whole family as a list that is easier to edit with a thumb. Every change
- * goes through the server's checks, and the old value is kept in history.
+ * The table itself cannot be changed by a stray click. The ✏️ next to a name
+ * is the only way in: it opens the whole family, where each detail changes
+ * only when he presses Save. On a phone the table scrolls sideways with the
+ * name pinned on the left. Every change goes through the server's checks,
+ * and the old value is kept in history.
  */
 
 import Link from "next/link";
@@ -50,6 +50,38 @@ function display(column: TableColumn, value: Value): string {
   return String(value);
 }
 
+/** Does this box contain what he searched for? Phones are checked with and without spaces. */
+function matchesSearch(column: TableColumn, value: Value, query: string): boolean {
+  if (!query || value === null || value === "" || column.kind === "status" || column.kind === "profile" || column.key === "documents") return false;
+  const needle = query.toLowerCase();
+  return display(column, value).toLowerCase().includes(needle) || String(value).toLowerCase().includes(needle);
+}
+
+/** The searched word marked in yellow; stronger on the family the arrows are on. */
+function Highlight({ text, raw, query, current }: { text: string; raw: string; query: string; current: boolean }) {
+  if (!query) return <>{text}</>;
+  const mark = `rounded-sm px-0.5 ${current ? "bg-warning text-bg" : "bg-warning/25 text-inherit"}`;
+  const lower = text.toLowerCase();
+  const needle = query.toLowerCase();
+  // "9876543210" is shown as "+91 98765 43210": mark the whole number.
+  if (!lower.includes(needle)) {
+    return raw.toLowerCase().includes(needle) ? <mark className={mark}>{text}</mark> : <>{text}</>;
+  }
+  const parts: React.ReactNode[] = [];
+  let at = 0;
+  for (let i = lower.indexOf(needle); i !== -1; i = lower.indexOf(needle, at)) {
+    if (i > at) parts.push(text.slice(at, i));
+    parts.push(
+      <mark key={i} className={mark}>
+        {text.slice(i, i + needle.length)}
+      </mark>,
+    );
+    at = i + needle.length;
+  }
+  parts.push(text.slice(at));
+  return <>{parts}</>;
+}
+
 /** What goes in the box when he starts editing. */
 function editable(column: TableColumn, value: Value): string {
   if (value === null) return "";
@@ -60,35 +92,70 @@ function editable(column: TableColumn, value: Value): string {
 const WIDTH: Record<string, string> = {
   [NAME]: "min-w-[9.5rem] max-w-[11rem] sm:min-w-[13rem] sm:max-w-[16rem]",
   family_code: "min-w-[8rem]",
+  profile: "min-w-[6.5rem]",
   documents: "min-w-[7rem]",
   children: "min-w-[6rem]",
   unit: "min-w-[11rem]",
   email: "min-w-[15rem]",
   bank_name: "min-w-[11rem]",
+  bank_address: "min-w-[14rem]",
+  correspondence_address: "min-w-[14rem]",
+  record_office: "min-w-[14rem]",
+  notes: "min-w-[14rem]",
 };
 
-// --- the editor used in a table box and in the family panel ----------------
+// --- how complete the profile is --------------------------------------------
+
+/** A ring that fills up like a clock, with the percentage inside. */
+function ProfileRing({ percent, size = 40 }: { percent: number; size?: number }) {
+  const stroke = size >= 56 ? 6 : 4;
+  const radius = (size - stroke) / 2;
+  const around = 2 * Math.PI * radius;
+  const tone = percent === 100 ? "text-success" : percent >= 50 ? "text-warning" : "text-danger";
+  return (
+    <span className={`relative inline-flex shrink-0 items-center justify-center ${tone}`} style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" strokeOpacity={0.18} strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={around}
+          strokeDashoffset={around * (1 - percent / 100)}
+        />
+      </svg>
+      <span
+        className="absolute font-semibold tabular-nums text-text"
+        style={{ fontSize: size >= 56 ? 16 : 11 }}
+        aria-label={`Profile ${percent}% complete`}
+      >
+        {percent}%
+      </span>
+    </span>
+  );
+}
+
+// --- the editor used in the family panel -----------------------------------
 
 function CellEditor({
   column,
   initial,
   onSave,
   onCancel,
-  onTab,
-  large,
 }: {
   column: TableColumn;
   initial: string;
   /** Resolves to an error message, or null when saved. */
   onSave: (value: string) => Promise<string | null>;
   onCancel: () => void;
-  onTab?: (backwards: boolean) => void;
-  large?: boolean;
 }) {
   const [draft, setDraft] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const lastTried = useRef<string | null>(null);
   const ref = useRef<HTMLInputElement & HTMLSelectElement>(null);
 
   useEffect(() => {
@@ -96,36 +163,31 @@ function CellEditor({
     if (ref.current && "select" in ref.current && column.kind !== "choice") ref.current.select();
   }, [column.kind]);
 
-  async function commit(then?: () => void) {
+  // Only the Save button saves: Enter, Tab or clicking away never do.
+  async function commit() {
     if (saving) return;
     if (draft.trim() === initial.trim()) {
-      (then ?? onCancel)();
+      onCancel();
       return;
     }
-    // Leaving the box again with the same refused value should not ask twice.
-    if (lastTried.current === draft && error) return;
-    lastTried.current = draft;
     setSaving(true);
     const problem = await onSave(draft);
     setSaving(false);
     setError(problem);
-    if (!problem) then?.();
   }
 
-  const base = `w-full rounded-lg border bg-bg outline-none focus:border-accent ${
+  const base = `min-h-12 w-full rounded-lg border bg-bg px-3 text-[17px] outline-none focus:border-accent ${
     error ? "border-danger" : "border-accent"
-  } ${large ? "min-h-12 px-3 text-[17px]" : "min-h-10 px-2.5 text-[16px]"}`;
+  }`;
 
   const keys = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      commit();
     } else if (e.key === "Escape") {
       e.preventDefault();
+      // Esc here closes this box only, not the whole family.
+      e.stopPropagation();
       onCancel();
-    } else if (e.key === "Tab" && onTab) {
-      e.preventDefault();
-      commit(() => onTab(e.shiftKey));
     }
   };
 
@@ -138,7 +200,6 @@ function CellEditor({
           disabled={saving}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={keys}
-          onBlur={() => !large && commit()}
           aria-label={column.label}
           className={base}
         >
@@ -156,7 +217,6 @@ function CellEditor({
           disabled={saving}
           onChange={(e) => setDraft(column.kind === "date" ? formatDateTyping(e.target.value) : e.target.value)}
           onKeyDown={keys}
-          onBlur={() => !large && commit()}
           aria-label={column.label}
           aria-invalid={error ? true : undefined}
           inputMode={column.kind === "phone" ? "tel" : column.kind === "date" || column.kind === "number" ? "numeric" : undefined}
@@ -165,40 +225,35 @@ function CellEditor({
           className={base}
         />
       )}
-      {saving && <p className="mt-1 text-[13px] text-muted">Saving…</p>}
       {error && <p className="mt-1 whitespace-normal text-[14px] leading-snug text-danger">{error}</p>}
-      {large && (
-        <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            onClick={() => commit()}
-            disabled={saving}
-            className="min-h-11 rounded-full bg-accent px-5 text-[16px] font-semibold text-accent-fg disabled:bg-surface-2 disabled:text-muted"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <button type="button" onClick={onCancel} className="min-h-11 px-3 text-[16px] text-muted underline">
-            Cancel
-          </button>
-        </div>
-      )}
+      <div className="mt-2 flex gap-2">
+        <button
+          type="button"
+          onClick={() => commit()}
+          disabled={saving}
+          className="min-h-11 rounded-full bg-accent px-5 text-[16px] font-semibold text-accent-fg disabled:bg-surface-2 disabled:text-muted"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button type="button" onClick={onCancel} className="min-h-11 px-3 text-[16px] text-muted underline">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
 
-// --- the family, as a list (opens from a name) ----------------------------
+// --- the family, as a list (opens from the ✏️ next to a name) --------------
 
 function FamilyPanel({
   row,
   columns,
-  editing,
   onSave,
   onDocuments,
   onClose,
 }: {
   row: TableRow;
   columns: TableColumn[];
-  editing: boolean;
   onSave: (key: string, value: string) => Promise<string | null>;
   onDocuments: (count: number) => void;
   onClose: () => void;
@@ -213,7 +268,19 @@ function FamilyPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, open]);
 
-  const shown = columns.filter((c) => c.key !== NAME && c.key !== "documents" && c.kind !== "status");
+  // Every detail, under the same headings as his sheet (Soldier, Address, Children...).
+  const groups: { title: string; columns: TableColumn[] }[] = [];
+  for (const c of columns) {
+    if (c.key === "documents" || c.kind === "status" || c.kind === "profile") continue;
+    const last = groups[groups.length - 1];
+    if (last?.title === c.group) last.columns.push(c);
+    else groups.push({ title: c.group, columns: [c] });
+  }
+
+  // A child who isn't recorded yet shows only their name box ("+ Add Child 2"),
+  // and only once the child before them exists.
+  const childSlot = (title: string) => Number(/^Child (\d)$/.exec(title)?.[1] ?? 0);
+  const hasChild = (slot: number) => Boolean(row.values[`child${slot}_name`]);
 
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={String(row.values[NAME] ?? "Family")}>
@@ -260,45 +327,89 @@ function FamilyPanel({
           <SupportingDocuments familyId={row.family_id} onChange={(docs) => onDocuments(docs.length)} />
 
           <h3 className="mb-1 mt-7 text-[17px] font-semibold">Details</h3>
-          {!editing && (
-            <p className="mb-2 text-[14px] text-muted">Switch on Editing to change these.</p>
-          )}
-          <dl className="divide-y divide-border">
-            {[columns.find((c) => c.key === NAME)!, ...shown].map((c) => (
-              <div key={c.key} className="py-3">
-                <dt className="text-[14px] text-muted">{c.label}</dt>
-                {open === c.key ? (
-                  <dd className="mt-1">
-                    <CellEditor
-                      large
-                      column={c}
-                      initial={editable(c, row.values[c.key])}
-                      onCancel={() => setOpen(null)}
-                      onSave={async (v) => {
-                        const problem = await onSave(c.key, v);
-                        if (!problem) setOpen(null);
-                        return problem;
-                      }}
-                    />
-                  </dd>
-                ) : (
-                  <dd className="flex items-center gap-2">
-                    <span className={`min-w-0 flex-1 break-words text-[17px] ${display(c, row.values[c.key]) ? "" : "text-muted"}`}>
-                      {display(c, row.values[c.key]) || "Not known"}
-                    </span>
-                    {editing && c.editable && (
-                      <button
-                        onClick={() => setOpen(c.key)}
-                        className="min-h-11 shrink-0 rounded-full px-3 text-[15px] font-medium text-accent hover:bg-surface-2"
-                      >
-                        Change
-                      </button>
+          <div className="mb-3 mt-2 flex items-start gap-4 rounded-2xl border border-border bg-surface p-4">
+            <ProfileRing percent={Number(row.values.profile ?? 0)} size={64} />
+            <div className="min-w-0 flex-1">
+              <p className="text-[17px] font-semibold">Profile {Number(row.values.profile ?? 0)}% complete</p>
+              {row.missing.length === 0 ? (
+                <p className="text-[15px] text-muted">Every detail is filled in.</p>
+              ) : (
+                <details className="text-[15px] text-muted">
+                  <summary className="cursor-pointer py-1 text-accent">
+                    {row.missing.length} {row.missing.length === 1 ? "detail" : "details"} still missing
+                  </summary>
+                  <p className="mt-1 leading-relaxed">{row.missing.join(", ")}</p>
+                </details>
+              )}
+            </div>
+          </div>
+          <p className="mb-2 text-[14px] text-muted">Press Change, type, then Save. Nothing is saved until you press Save.</p>
+          {groups.map((group) => {
+            const slot = childSlot(group.title);
+            if (slot > 1 && !hasChild(slot - 1)) return null;
+            const nameKey = `child${slot}_name`;
+            if (slot && !hasChild(slot) && open !== nameKey) {
+              return (
+                <section key={group.title} className="mt-5">
+                  <h4 className="border-b-2 border-border pb-1.5 text-[15px] font-semibold uppercase tracking-wide text-muted">
+                    {group.title}
+                  </h4>
+                  <div className="flex items-center gap-2 py-3">
+                    <span className="flex-1 text-[17px] text-muted">No child yet.</span>
+                    <button
+                      onClick={() => setOpen(nameKey)}
+                      className="min-h-11 shrink-0 rounded-full border border-border px-4 text-[15px] font-medium text-accent hover:bg-surface-2"
+                    >
+                      + Add Child {slot}
+                    </button>
+                  </div>
+                </section>
+              );
+            }
+            const shownColumns = slot && !hasChild(slot) ? group.columns.filter((c) => c.key === nameKey) : group.columns;
+            return (
+            <section key={group.title} className="mt-5">
+              <h4 className="border-b-2 border-border pb-1.5 text-[15px] font-semibold uppercase tracking-wide text-muted">
+                {group.title}
+              </h4>
+              <dl className="divide-y divide-border">
+                {shownColumns.map((c) => (
+                  <div key={c.key} className="py-3">
+                    <dt className="text-[14px] text-muted">{c.label}</dt>
+                    {open === c.key ? (
+                      <dd className="mt-1">
+                        <CellEditor
+                          column={c}
+                          initial={editable(c, row.values[c.key])}
+                          onCancel={() => setOpen(null)}
+                          onSave={async (v) => {
+                            const problem = await onSave(c.key, v);
+                            if (!problem) setOpen(null);
+                            return problem;
+                          }}
+                        />
+                      </dd>
+                    ) : (
+                      <dd className="flex items-center gap-2">
+                        <span className={`min-w-0 flex-1 break-words text-[17px] ${display(c, row.values[c.key]) ? "" : "text-muted"}`}>
+                          {display(c, row.values[c.key]) || "Not known"}
+                        </span>
+                        {c.editable && (
+                          <button
+                            onClick={() => setOpen(c.key)}
+                            className="min-h-11 shrink-0 rounded-full px-3 text-[15px] font-medium text-accent hover:bg-surface-2"
+                          >
+                            Change
+                          </button>
+                        )}
+                      </dd>
                     )}
-                  </dd>
-                )}
-              </div>
-            ))}
-          </dl>
+                  </div>
+                ))}
+              </dl>
+            </section>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -306,24 +417,6 @@ function FamilyPanel({
 }
 
 // --- the table --------------------------------------------------------------
-
-function EditSwitch({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
-  return (
-    <button
-      role="switch"
-      aria-checked={on}
-      onClick={() => onChange(!on)}
-      className={`inline-flex min-h-11 shrink-0 items-center gap-2.5 rounded-full border px-4 text-[16px] font-medium transition ${
-        on ? "border-accent bg-accent-soft" : "border-border bg-bg hover:bg-surface-2"
-      }`}
-    >
-      <span className={`relative h-6 w-10 rounded-full transition ${on ? "bg-accent" : "bg-surface-2 ring-1 ring-inset ring-border"}`} aria-hidden="true">
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-bg shadow transition-all ${on ? "left-[1.125rem]" : "left-0.5"}`} />
-      </span>
-      Editing
-    </button>
-  );
-}
 
 function SortArrow({ direction }: { direction: "asc" | "desc" | null }) {
   return (
@@ -357,13 +450,15 @@ export default function FamilyTable({
   const [data, setData] = useState<FamiliesTable | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [active, setActive] = useState<CellRef | null>(null);
   const [justSaved, setJustSaved] = useState<CellRef | null>(null);
   const [panel, setPanel] = useState<TableRow | null>(null);
   const [attempt, setAttempt] = useState(0);
-  // A box he left before its save came back: the reason it was refused.
-  const [lostEdit, setLostEdit] = useState<string | null>(null);
+  // The ↑ ↓ arrows: which row of this page they are on, and where to land after a page turn.
+  const [current, setCurrent] = useState(0);
+  const landAt = useRef<"first" | "last">("first");
+  const jumped = useRef(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const searchBox = useRef<HTMLInputElement>(null);
 
   // Opened from a link such as /families?family=12 (it may be on any page).
   useEffect(() => {
@@ -385,13 +480,27 @@ export default function FamilyTable({
     setLoading(true);
     setError(null);
     getFamiliesTable({ q: query, filter, sort: sort.key, descending: sort.descending, page, pageSize })
-      .then((d) => live && setData(d))
+      .then((d) => {
+        if (!live) return;
+        setData(d);
+        setCurrent(landAt.current === "last" ? Math.max(0, d.rows.length - 1) : 0);
+        landAt.current = "first";
+      })
       .catch((e) => live && setError(errorText(e)))
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
     };
   }, [query, filter, sort, page, pageSize, attempt]);
+
+  // After an arrow press, bring the marked box into view (sideways too).
+  useEffect(() => {
+    if (!jumped.current) return;
+    jumped.current = false;
+    scroller.current
+      ?.querySelector("[data-current-match]")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+  }, [current, data]);
 
   useEffect(() => {
     if (!justSaved) return;
@@ -410,7 +519,6 @@ export default function FamilyTable({
         const result = await editFamilyCell(familyId, key, value);
         replaceRow(result.row);
         if (result.changed) setJustSaved({ familyId, key });
-        setLostEdit(null);
         return null;
       } catch (e) {
         return errorText(e);
@@ -434,21 +542,46 @@ export default function FamilyTable({
     setPage(1);
   }
 
-  /** Tab from a box: the next (or previous) editable box in the same row. */
-  function move(from: CellRef, backwards: boolean) {
-    const editableKeys = (data?.columns ?? []).filter((c) => c.editable).map((c) => c.key);
-    const next = editableKeys[editableKeys.indexOf(from.key) + (backwards ? -1 : 1)];
-    setActive(next ? { familyId: from.familyId, key: next } : null);
-  }
-
   const columns = data?.columns ?? [];
   const lastPage = data ? Math.max(1, Math.ceil(data.total / data.page_size)) : 1;
   const firstShown = data && data.total ? (data.page - 1) * data.page_size + 1 : 0;
   const lastShown = data ? Math.min(data.page * data.page_size, data.total) : 0;
+  const showArrows = Boolean(query && data && data.total > 0);
+  const position = firstShown + current;
+
+  /** ↑ (-1) or ↓ (+1): the next family that matches, turning the page if needed. */
+  function step(direction: 1 | -1) {
+    if (!data || loading || !data.rows.length) return;
+    const next = current + direction;
+    jumped.current = true;
+    if (next >= 0 && next < data.rows.length) {
+      setCurrent(next);
+    } else if (direction === 1 && data.page < lastPage) {
+      landAt.current = "first";
+      setPage(data.page + 1);
+    } else if (direction === -1 && data.page > 1) {
+      landAt.current = "last";
+      setPage(data.page - 1);
+    } else {
+      jumped.current = false;
+    }
+  }
+
+  function searchKeys(e: React.KeyboardEvent) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    // Enter before the search has caught up: search now instead of moving.
+    if (search.trim() !== query) {
+      setQuery(search.trim());
+      setPage(1);
+    } else {
+      step(e.shiftKey ? -1 : 1);
+    }
+  }
 
   return (
     <div className="min-w-0">
-      {/* ---------- search, filters, editing ---------- */}
+      {/* ---------- search and filters ---------- */}
       <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center">
         <div className="relative min-w-0 flex-1">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true">
@@ -456,13 +589,66 @@ export default function FamilyTable({
             <path d="M16 16l4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
           <input
+            ref={searchBox}
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={searchKeys}
             placeholder="Search name, soldier, army no., district, phone"
             aria-label="Search families"
-            className="min-h-12 w-full rounded-full border border-border bg-bg pl-11 pr-4 text-[17px] outline-none focus:border-accent"
+            // The browser's own ✕ only shows on hover; ours below is always there.
+            className={`min-h-12 w-full rounded-full border border-border bg-bg pl-11 text-[17px] outline-none focus:border-accent [&::-webkit-search-cancel-button]:hidden ${
+              showArrows ? "pr-[13rem]" : search ? "pr-12" : "pr-4"
+            }`}
           />
+          {search && (
+            <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setQuery("");
+                  setPage(1);
+                  searchBox.current?.focus();
+                }}
+                aria-label="Clear the search"
+                title="Clear the search"
+                className="flex h-10 w-10 items-center justify-center rounded-full text-muted hover:bg-surface-2 hover:text-text"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" />
+                </svg>
+              </button>
+              {showArrows && data && (
+              <>
+              <span className="whitespace-nowrap px-1.5 text-[14px] tabular-nums text-muted" aria-live="polite">
+                {position.toLocaleString("en-IN")} of {data.total.toLocaleString("en-IN")}
+              </span>
+              {([-1, 1] as const).map((direction) => (
+                <button
+                  key={direction}
+                  type="button"
+                  onClick={() => step(direction)}
+                  disabled={loading || (direction === -1 ? position <= 1 : position >= data.total)}
+                  aria-label={direction === -1 ? "Previous match" : "Next match"}
+                  title={direction === -1 ? "Previous match (Shift+Enter)" : "Next match (Enter)"}
+                  className="flex h-10 w-10 items-center justify-center rounded-full text-text hover:bg-surface-2 disabled:opacity-30"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                      d={direction === -1 ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6"}
+                      stroke="currentColor"
+                      strokeWidth="2.25"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              ))}
+              </>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="no-scrollbar -mx-4 flex min-w-0 flex-1 gap-2 overflow-x-auto px-4 lg:mx-0 lg:px-0" role="group" aria-label="Show">
@@ -483,19 +669,10 @@ export default function FamilyTable({
               </button>
             ))}
           </div>
-          <EditSwitch
-            on={editing}
-            onChange={(on) => {
-              setEditing(on);
-              setActive(null);
-            }}
-          />
         </div>
       </div>
       <p className="mb-3 text-[15px] text-muted">
-        {editing
-          ? "Tap a box to change it. Enter saves, Esc cancels. Old values are always kept in the history."
-          : "Tap a name to see the whole family and its documents. Scroll sideways for more columns."}
+        Press ✏️ next to a name to see or change that family. Scroll sideways for more columns.
       </p>
 
       {error && (
@@ -509,14 +686,6 @@ export default function FamilyTable({
         </div>
       )}
 
-      {lostEdit && (
-        <div className="mb-3">
-          <Notice tone="danger" title="One change was not saved" onClose={() => setLostEdit(null)}>
-            {lostEdit}
-          </Notice>
-        </div>
-      )}
-
       {/* ---------- the sheet ---------- */}
       {!data && !error ? (
         <div className="space-y-2" aria-hidden="true">
@@ -526,6 +695,7 @@ export default function FamilyTable({
         </div>
       ) : data ? (
         <div
+          ref={scroller}
           className={`relative max-h-[62dvh] overflow-auto rounded-2xl border border-border bg-surface transition-opacity sm:max-h-[70vh] ${
             loading ? "opacity-60" : ""
           }`}
@@ -567,67 +737,50 @@ export default function FamilyTable({
                   </td>
                 </tr>
               )}
-              {data.rows.map((row) => (
+              {data.rows.map((row, rowIndex) => {
+                const matched = query ? columns.filter((c) => matchesSearch(c, row.values[c.key], query)).map((c) => c.key) : [];
+                const isCurrentRow = showArrows && rowIndex === current;
+                return (
                 <tr key={row.family_id} className="group">
                   {columns.map((c, index) => {
                     const value = row.values[c.key];
                     const shown = display(c, value);
-                    const isActive = active?.familyId === row.family_id && active.key === c.key;
                     const saved = justSaved?.familyId === row.family_id && justSaved.key === c.key;
                     const sticky = index === 0 ? "sticky left-0 z-10 border-r" : "";
-                    const cell = `border-b border-border px-3 align-middle ${sticky} ${
+                    // Scroll margins keep the box clear of the pinned name column and header.
+                    const cell = `border-b border-border px-3 align-middle scroll-mt-12 scroll-ml-[12rem] sm:scroll-ml-[17rem] ${sticky} ${
                       saved ? "bg-accent-soft" : "bg-surface group-hover:bg-surface-2"
                     } ${WIDTH[c.key] ?? "min-w-[8rem]"}`;
+                    const found = (
+                      <Highlight
+                        text={shown}
+                        raw={String(value ?? "")}
+                        query={matched.includes(c.key) ? query : ""}
+                        current={isCurrentRow}
+                      />
+                    );
+                    const target = isCurrentRow && matched[0] === c.key ? { "data-current-match": true } : {};
 
-                    if (c.key === NAME && !isActive) {
+                    if (c.key === NAME) {
                       return (
-                        <th key={c.key} scope="row" className={`${cell} py-0 font-medium`}>
+                        <th key={c.key} scope="row" className={`${cell} py-0 font-medium`} {...target}>
                           <div className="flex items-center gap-1">
+                            <span className="flex min-h-12 min-w-0 flex-1 items-center truncate" title={shown}>
+                              <span className="truncate">{found}</span>
+                            </span>
+                            {/* The only way into a family: nothing else in the table can be clicked. */}
                             <button
                               onClick={() => setPanel(row)}
-                              className="min-h-12 min-w-0 flex-1 truncate text-left underline-offset-4 hover:text-accent hover:underline"
-                              title={shown}
+                              aria-label={`See or change ${shown}`}
+                              title="See or change this family"
+                              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-bg hover:text-accent"
                             >
-                              {shown}
+                              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M4 20h4L19 9l-4-4L4 16v4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                              </svg>
                             </button>
-                            {editing && (
-                              <button
-                                onClick={() => setActive({ familyId: row.family_id, key: c.key })}
-                                aria-label={`Change the name ${shown}`}
-                                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-bg hover:text-accent"
-                              >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                  <path d="M4 20h4L19 9l-4-4L4 16v4z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-                                </svg>
-                              </button>
-                            )}
                           </div>
                         </th>
-                      );
-                    }
-
-                    if (isActive) {
-                      return (
-                        <td key={c.key} className={`${cell} py-1.5`}>
-                          <CellEditor
-                            column={c}
-                            initial={editable(c, value)}
-                            onCancel={() => setActive(null)}
-                            onTab={(backwards) => move({ familyId: row.family_id, key: c.key }, backwards)}
-                            onSave={async (v) => {
-                              const problem = await save(row.family_id, c.key, v);
-                              setActive((a) => {
-                                const stillHere = a?.familyId === row.family_id && a.key === c.key;
-                                // He has moved on: the box is gone, so say it here instead.
-                                if (problem && !stillHere) {
-                                  setLostEdit(`${c.label} for ${row.values[NAME]} was not changed: ${problem}`);
-                                }
-                                return stillHere && !problem ? null : a;
-                              });
-                              return problem;
-                            }}
-                          />
-                        </td>
                       );
                     }
 
@@ -644,11 +797,20 @@ export default function FamilyTable({
                         </span>
                       ) : shown ? (
                         <span className="block max-w-[18rem] truncate" title={shown}>
-                          {shown}
+                          {found}
                         </span>
                       ) : (
                         <span className="text-muted" aria-label="empty">—</span>
                       );
+
+                    if (c.kind === "profile") {
+                      // What is missing is listed in the family panel (✏️), not in a pop-up here.
+                      return (
+                        <td key={c.key} className={`${cell} py-1`}>
+                          <ProfileRing percent={Number(value ?? 0)} />
+                        </td>
+                      );
+                    }
 
                     if (c.kind === "status") {
                       // "scheme.CEA" -> the CEA answer for this family.
@@ -656,14 +818,9 @@ export default function FamilyTable({
                       return (
                         <td key={c.key} className={`${cell} py-0`}>
                           {answer ? (
-                            <button
-                              onClick={() => setPanel(row)}
-                              title={answer.headline}
-                              aria-label={`${c.label}: ${answer.label}. ${answer.headline}`}
-                              className="flex min-h-12 w-full items-center text-left"
-                            >
+                            <span title={answer.headline} className="flex min-h-12 items-center">
                               <EligibilityBadge status={answer.status} label={answer.label} small />
-                            </button>
+                            </span>
                           ) : (
                             <span className="text-muted">—</span>
                           )}
@@ -671,38 +828,15 @@ export default function FamilyTable({
                       );
                     }
 
-                    if (c.key === "documents") {
-                      return (
-                        <td key={c.key} className={`${cell} py-0`}>
-                          <button onClick={() => setPanel(row)} className="flex min-h-12 w-full items-center text-left hover:underline">
-                            {content}
-                          </button>
-                        </td>
-                      );
-                    }
-
-                    if (editing && c.editable) {
-                      return (
-                        <td key={c.key} className={`${cell} py-0`}>
-                          <button
-                            onClick={() => setActive({ familyId: row.family_id, key: c.key })}
-                            aria-label={`Change ${c.label} for ${row.values[NAME]}: ${shown || "empty"}`}
-                            className="-mx-1.5 flex min-h-12 w-[calc(100%+0.75rem)] cursor-text items-center rounded-md px-1.5 text-left ring-inset hover:bg-bg hover:ring-1 hover:ring-accent/50"
-                          >
-                            {content}
-                          </button>
-                        </td>
-                      );
-                    }
-
                     return (
-                      <td key={c.key} className={`${cell} h-12 whitespace-nowrap py-0 ${c.editable ? "" : "text-muted"}`}>
+                      <td key={c.key} className={`${cell} h-12 whitespace-nowrap py-0 ${c.editable ? "" : "text-muted"}`} {...target}>
                         {content}
                       </td>
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -750,7 +884,6 @@ export default function FamilyTable({
         <FamilyPanel
           row={panel}
           columns={data.columns}
-          editing={editing}
           onSave={(key, value) => save(panel.family_id, key, value)}
           onDocuments={(count) => setDocumentCount(panel.family_id, count)}
           onClose={closePanel}

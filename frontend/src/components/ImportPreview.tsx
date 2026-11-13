@@ -6,8 +6,11 @@ import PreviewColumns from "@/components/PreviewColumns";
 import RowEditor from "@/components/RowEditor";
 import {
   commitImport,
+  decideImportRow,
+  editImportRow,
   previewImport,
   type CommitResult,
+  type FieldChange,
   type PreviewResult,
   type RowPreview,
 } from "@/lib/api";
@@ -25,24 +28,243 @@ type Props = {
 };
 
 const ACTION_LABELS: Record<RowPreview["action"], string> = {
-  create: "New families",
+  possible_typo: "Possible typos",
+  needs_decision: "Possible duplicates",
+  lookalike_in_file: "Possibly the same family twice in this sheet",
   update: "Updates to families you already have",
-  unchanged: "Already correct, nothing changes",
-  needs_decision: "Might already exist — needs you to decide",
-  duplicate_in_file: "The same person twice in this sheet",
-  skipped: "Cannot be used",
+  create: "New families",
+  unchanged: "Already in the database, no changes, skipped",
+  duplicate_in_file: "Exact copies in this sheet, skipped",
+  skipped: "Cannot be used: no name, skipped. Use Edit to add a name",
   excluded: "You left these out",
 };
 
-const ACTION_ORDER: RowPreview["action"][] = [
-  "create",
-  "update",
-  "needs_decision",
-  "duplicate_in_file",
-  "unchanged",
-  "excluded",
-  "skipped",
+// The groups, under what they were compared with. Within each, the ones that
+// need him come first.
+const SECTIONS: { step: string; title: string; hint?: string; actions: RowPreview["action"][] }[] = [
+  {
+    step: "1",
+    title: "Excel vs Excel",
+    actions: ["lookalike_in_file", "duplicate_in_file"],
+  },
+  {
+    step: "2",
+    title: "Excel vs database",
+    actions: ["possible_typo", "needs_decision", "update", "create", "unchanged"],
+  },
+  {
+    step: "–",
+    title: "Not imported",
+    actions: ["excluded", "skipped"],
+  },
 ];
+
+type Send = (body: Parameters<typeof decideImportRow>[2]) => Promise<void>;
+
+const choiceButton = (on: boolean) =>
+  `min-h-10 rounded-full border px-3.5 text-[14px] transition ${
+    on ? "border-accent bg-accent font-semibold text-accent-fg" : "border-border bg-bg text-text hover:bg-surface-2"
+  }`;
+
+/** One value that would change: the sheet and the database side by side, and his choice. */
+function ChangeChoice({
+  change,
+  busy,
+  send,
+  type,
+}: {
+  change: FieldChange;
+  busy: boolean;
+  send: Send;
+  type: (fieldKey: string, value: string) => Promise<boolean>;
+}) {
+  const [typing, setTyping] = useState(false);
+  const [draft, setDraft] = useState(change.new_value ?? "");
+  const choose = (choice: "keep" | "excel") =>
+    send({
+      decisions: { [change.field_name]: choice },
+      clear_typed: change.decision === "typed" ? [change.field_key] : [],
+    });
+
+  return (
+    <li className={`rounded-lg border px-3 py-2.5 ${change.decision ? "border-border bg-bg" : "border-warning/50 bg-bg"}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <span className="text-[14px] font-medium">{change.label}</span>
+        {change.typo ? (
+          <span className="text-[13px] font-medium text-warning">{change.typo}</span>
+        ) : (
+          <span className="text-[13px] text-muted">Changed</span>
+        )}
+      </div>
+      <div className="mt-1 grid gap-x-4 gap-y-0.5 text-[15px] sm:grid-cols-2">
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          <span className="text-[13px] text-muted">Excel: </span>
+          {change.decision === "typed" ? (
+            <span className="font-medium text-accent">{change.new_value} (you typed)</span>
+          ) : (
+            <span className="font-medium">{change.new_value ?? "(blank)"}</span>
+          )}
+        </span>
+        <span className="min-w-0 [overflow-wrap:anywhere]">
+          <span className="text-[13px] text-muted">Database: </span>
+          <span className="font-medium">{change.old_value ?? "(blank)"}</span>
+        </span>
+      </div>
+
+      {typing ? (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            aria-label={`Correct value for ${change.label}`}
+            autoFocus
+            className="min-h-10 min-w-0 flex-1 basis-48 rounded-lg border border-accent bg-bg px-3 text-[15px] outline-none"
+          />
+          <button
+            onClick={async () => (await type(change.field_key, draft)) && setTyping(false)}
+            disabled={busy || !draft.trim()}
+            className="min-h-10 rounded-full bg-accent px-4 text-[14px] font-semibold text-accent-fg disabled:bg-surface-2 disabled:text-muted"
+          >
+            Save
+          </button>
+          <button onClick={() => setTyping(false)} className="min-h-10 px-2 text-[14px] text-muted underline">
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label={`Which value for ${change.label}?`}>
+          <button onClick={() => choose("keep")} disabled={busy} aria-pressed={change.decision === "keep"} className={choiceButton(change.decision === "keep")}>
+            Keep database
+          </button>
+          <button onClick={() => choose("excel")} disabled={busy} aria-pressed={change.decision === "excel"} className={choiceButton(change.decision === "excel")}>
+            Take Excel
+          </button>
+          <button onClick={() => setTyping(true)} disabled={busy} aria-pressed={change.decision === "typed"} className={choiceButton(change.decision === "typed")}>
+            Type correct value
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
+const MARK: Record<string, { sign: string; tone: string }> = {
+  "=": { sign: "=", tone: "text-success" },
+  "~": { sign: "≈", tone: "text-warning" },
+  "!=": { sign: "≠", tone: "text-danger" },
+  "": { sign: "", tone: "" },
+};
+
+/** A possible duplicate: the sheet row next to the family it might be. */
+function DuplicateChoice({ row, busy, send }: { row: RowPreview; busy: boolean; send: Send }) {
+  return (
+    <div className="rounded-lg border border-border bg-bg px-3 py-3">
+      <p className="text-[15px]">
+        Might be <span className="font-semibold">{row.matched_family_code}</span>{" "}
+        <span className="text-muted">({row.match_score}% alike)</span>
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[22rem] text-left text-[14px]">
+          <thead>
+            <tr className="text-[13px] text-muted">
+              <th className="py-1 pr-2 font-normal" />
+              <th className="py-1 pr-2 font-normal">Excel</th>
+              <th className="w-6 py-1" />
+              <th className="py-1 font-normal">Database</th>
+            </tr>
+          </thead>
+          <tbody>
+            {row.comparison.map((c) => (
+              <tr key={c.label} className="border-t border-border">
+                <td className="py-1.5 pr-2 text-muted">{c.label}</td>
+                <td className="py-1.5 pr-2 font-medium">{c.excel ?? "—"}</td>
+                <td className={`py-1.5 text-center text-[16px] font-semibold ${MARK[c.mark].tone}`} aria-label={c.mark}>
+                  {MARK[c.mark].sign}
+                </td>
+                <td className="py-1.5 font-medium">{c.database ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Is this the same family?">
+        {(
+          [
+            ["same", "Same family, update it"],
+            ["new", "Different family, add new"],
+            ["leave", "Leave out"],
+          ] as const
+        ).map(([choice, label]) => (
+          <button
+            key={choice}
+            onClick={() => send({ match: choice })}
+            disabled={busy}
+            aria-pressed={row.match_choice === choice}
+            className={choiceButton(row.match_choice === choice)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Two rows of this sheet that look like one family: which to keep. */
+function PairChoice({ row, busy, send }: { row: RowPreview; busy: boolean; send: Send }) {
+  const other = row.pair_with_row;
+  return (
+    <div className="rounded-lg border border-border bg-bg px-3 py-3">
+      <p className="text-[15px]">
+        Looks like <span className="font-semibold">row {other}</span>{" "}
+        <span className="text-muted">({row.pair_score}% alike)</span>
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[22rem] text-left text-[14px]">
+          <thead>
+            <tr className="text-[13px] text-muted">
+              <th className="py-1 pr-2 font-normal" />
+              <th className="py-1 pr-2 font-normal">Row {other}</th>
+              <th className="w-6 py-1" />
+              <th className="py-1 font-normal">Row {row.row_number}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {row.pair_comparison.map((c) => (
+              <tr key={c.label} className="border-t border-border">
+                <td className="py-1.5 pr-2 text-muted">{c.label}</td>
+                <td className="py-1.5 pr-2 font-medium">{c.excel ?? "—"}</td>
+                <td className={`py-1.5 text-center text-[16px] font-semibold ${MARK[c.mark].tone}`} aria-label={c.mark}>
+                  {MARK[c.mark].sign}
+                </td>
+                <td className="py-1.5 font-medium">{c.database ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Which row to keep?">
+        {(
+          [
+            ["first", `Same family, keep row ${other}`],
+            ["second", `Same family, keep row ${row.row_number}`],
+            ["both", "Different families, keep both"],
+          ] as const
+        ).map(([choice, label]) => (
+          <button
+            key={choice}
+            onClick={() => send({ pair: choice })}
+            disabled={busy}
+            aria-pressed={row.pair_choice === choice}
+            className={choiceButton(row.pair_choice === choice)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Row({
   row,
@@ -53,20 +275,58 @@ function Row({
   importId: number;
   onUpdated: (preview: PreviewResult) => void;
 }) {
-  // "Might already exist" rows are opened by default: the whole point of that
-  // group is to decide, and the reasons are what you decide on.
-  const [open, setOpen] = useState(row.action === "needs_decision");
+  // A row waiting for his choice opens by itself: the choice is the point.
+  const [open, setOpen] = useState(
+    row.undecided > 0 || row.action === "needs_decision" || row.action === "lookalike_in_file",
+  );
   const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const who = row.widow_name || row.soldier_name || "(no name)";
-  // Match reasons count as detail too. Without them a "needs you to decide"
-  // row could not be opened at all, hiding the very thing you need to see.
   const hasDetail =
     row.changes.length > 0 ||
     row.problems.length > 0 ||
-    row.match_reasons.length > 0;
+    row.match_reasons.length > 0 ||
+    row.comparison.length > 0 ||
+    row.pair_comparison.length > 0;
+  const decidable = row.action !== "create" && row.action !== "unchanged";
+
+  async function run(work: () => Promise<PreviewResult>): Promise<boolean> {
+    setBusy(true);
+    setError(null);
+    try {
+      onUpdated(await work());
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save that.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  const send: Send = async (body) => {
+    await run(() => decideImportRow(importId, row.row_number, body));
+  };
+  /** A value he typed, kept with the corrections he made before on this row. */
+  const type = (fieldKey: string, value: string) => {
+    const values: Record<string, string> = {};
+    for (const f of row.fields) if (f.edited) values[f.field_key] = f.value;
+    values[fieldKey] = value;
+    return run(() => editImportRow(importId, row.row_number, { values, skip: row.skipped_by_user }));
+  };
+  const all = (choice: "keep" | "excel") =>
+    send({
+      decisions: Object.fromEntries(
+        row.changes.filter((c) => c.decision !== "typed").map((c) => [c.field_name, choice]),
+      ),
+    });
 
   return (
-    <li className="border-t border-border py-2.5">
+    <li
+      id={`row-${row.row_number}`}
+      data-undecided={row.undecided > 0 ? "" : undefined}
+      className="scroll-mt-24 border-t border-border py-2.5"
+    >
       <div className="flex items-start gap-2 sm:gap-3">
         <button
           onClick={() => hasDetail && setOpen((v) => !v)}
@@ -88,19 +348,28 @@ function Row({
             </span>
             <span className="block truncate text-xs text-muted">
               {row.district}
-              {row.matched_family_code && ` · matches ${row.matched_family_code}`}
-              {row.duplicate_of_row && ` · same as row ${row.duplicate_of_row}`}
+              {row.matched_family_code &&
+                (row.action === "unchanged"
+                  ? ` · already saved as ${row.matched_family_code}`
+                  : ` · matches ${row.matched_family_code}`)}
+              {row.duplicate_of_row && ` · exact copy of row ${row.duplicate_of_row}, skipped`}
             </span>
           </span>
           <span className="flex basis-full flex-wrap items-center gap-x-2 gap-y-0.5 pl-[3.75rem] sm:basis-auto sm:pl-0 sm:pt-0.5">
+            {row.note && row.action === "excluded" && (
+              <span className="text-xs text-muted">{row.note}</span>
+            )}
+            {decidable && row.undecided > 0 && (
+              <span className="text-xs font-semibold text-warning">
+                {row.undecided} to decide
+              </span>
+            )}
+            {decidable && row.undecided === 0 && (row.changes.length > 0 || row.match_choice) && (
+              <span className="text-xs font-medium text-success">Decided</span>
+            )}
             {row.edited_fields.length > 0 && (
               <span className="text-xs text-accent">
                 {row.edited_fields.length} corrected
-              </span>
-            )}
-            {row.changes.length > 0 && (
-              <span className="text-xs text-muted">
-                {row.changes.length} change{row.changes.length === 1 ? "" : "s"}
               </span>
             )}
             {row.problems.length > 0 && (
@@ -138,24 +407,39 @@ function Row({
 
       {open && (
         <div className="mt-2 space-y-2 sm:pl-12">
-          {row.changes.length > 0 && (
-            // A list, not a table: on a phone each change stacks as label, then old → new.
-            <ul className="space-y-1.5 text-[15px]">
-              {row.changes.map((change) => (
-                <li
-                  key={change.field_name}
-                  className="grid gap-x-3 rounded-lg bg-bg px-3 py-2 sm:grid-cols-[minmax(8rem,auto)_1fr]"
-                >
-                  <span className="text-[14px] text-muted">{change.label}</span>
-                  <span className="min-w-0 [overflow-wrap:anywhere]">
-                    <span className="text-muted line-through">{change.old_value ?? "(blank)"}</span>
-                    <span className="px-1.5 text-muted" aria-hidden="true">→</span>
-                    <span className="sr-only"> changes to </span>
-                    <span className="font-medium">{change.new_value}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
+          {row.action === "needs_decision" && <DuplicateChoice row={row} busy={busy} send={send} />}
+          {row.action === "lookalike_in_file" && <PairChoice row={row} busy={busy} send={send} />}
+
+          {row.changes.length > 0 && decidable && (
+            <>
+              {row.changes.length > 1 && (
+                <div className="flex flex-wrap items-center gap-2 text-[14px]">
+                  <span className="text-muted">For all {row.changes.length} values:</span>
+                  <button onClick={() => all("excel")} disabled={busy} className="min-h-9 rounded-full border border-border px-3 hover:bg-surface-2">
+                    Take Excel for all
+                  </button>
+                  <button onClick={() => all("keep")} disabled={busy} className="min-h-9 rounded-full border border-border px-3 hover:bg-surface-2">
+                    Keep database for all
+                  </button>
+                </div>
+              )}
+              <ul className="space-y-2">
+                {row.changes.map((change) => (
+                  <ChangeChoice key={change.field_name} change={change} busy={busy} send={send} type={type} />
+                ))}
+              </ul>
+            </>
+          )}
+
+          {error && <p className="text-[14px] text-danger">{error}</p>}
+          {row.pair_choice && row.action !== "lookalike_in_file" && (
+            <p className="text-[14px] text-muted">
+              Looks like row {row.pair_with_row}: you chose{" "}
+              {row.pair_choice === "both" ? "to keep both" : `to keep row ${row.pair_choice === "first" ? row.pair_with_row : row.row_number}`}.{" "}
+              <button onClick={() => send({ pair: "undo" })} disabled={busy} className="text-accent underline">
+                Change
+              </button>
+            </p>
           )}
           {row.problems.map((problem, i) => (
             <p key={i} className="text-[14px] text-warning">
@@ -166,13 +450,6 @@ function Row({
             <p className="text-xs text-muted">
               Matched because: {row.match_reasons.join("; ")} ({row.match_score}%
               sure)
-            </p>
-          )}
-          {row.action === "needs_decision" && (
-            <p className="text-[14px] text-warning">
-              Not sure enough to treat as the same family. If you import, this is
-              added as a separate record and flagged for you to check later —
-              nothing is merged.
             </p>
           )}
         </div>
@@ -192,8 +469,13 @@ function Group({
   importId: number;
   onUpdated: (preview: PreviewResult) => void;
 }) {
+  const waiting = rows.filter((r) => r.undecided > 0).length;
   const [open, setOpen] = useState(
-    action === "needs_decision" || action === "duplicate_in_file",
+    waiting > 0 ||
+      action === "possible_typo" ||
+      action === "needs_decision" ||
+      action === "lookalike_in_file" ||
+      action === "duplicate_in_file",
   );
   if (rows.length === 0) return null;
 
@@ -205,7 +487,7 @@ function Group({
         className="flex min-h-12 w-full items-center justify-between gap-3 rounded-lg bg-surface-2 px-3 py-2.5 text-left"
       >
         <span className="text-[15px] font-medium">
-          {rows.length} — {ACTION_LABELS[action]}
+          {ACTION_LABELS[action]} <span className="text-muted">({rows.length})</span>
         </span>
         <span className="text-xs text-muted">{open ? "hide" : "show"}</span>
       </button>
@@ -228,8 +510,8 @@ function Group({
 /** The same words wherever rows repeated inside the sheet are mentioned. */
 function repeatsText(count: number): string {
   return count === 1
-    ? "1 row appears twice in this sheet. The second copy is skipped."
-    : `${count} rows appear twice in this sheet. The second copy is skipped.`;
+    ? "1 row is an exact copy of another row in this sheet, so it is skipped."
+    : `${count} rows are exact copies of other rows in this sheet, so they are skipped.`;
 }
 
 /** Shown instead of the Import button when no row would be written, with the reasons why. */
@@ -335,12 +617,6 @@ export default function ImportPreview({
           {result.duplicates_flagged > 0 && (
             <li>{result.duplicates_flagged} duplicate rows in the sheet were not imported</li>
           )}
-          {result.needs_decision > 0 && (
-            <li className="text-warning">
-              {result.needs_decision} may be families you already have — added, and
-              flagged for you to decide
-            </li>
-          )}
           {result.excluded > 0 && (
             <li>{result.excluded} rows you left out were not imported</li>
           )}
@@ -370,15 +646,22 @@ export default function ImportPreview({
     );
   }
 
-  const grouped = ACTION_ORDER.map((action) => ({
-    action,
-    rows: preview.rows.filter((r) => r.action === action),
-  }));
-  const willWrite =
-    (preview.counts.create ?? 0) +
-    (preview.counts.update ?? 0) +
-    (preview.counts.needs_decision ?? 0);
-  const repeats = preview.counts.duplicate_in_file ?? 0;
+  const sections = SECTIONS.map((section) => ({
+    ...section,
+    groups: section.actions
+      .map((action) => ({ action, rows: preview.rows.filter((r) => r.action === action) }))
+      .filter((g) => g.rows.length > 0),
+  })).filter((section) => section.groups.length > 0);
+  const willWrite = preview.rows.filter(
+    (r) =>
+      r.action === "create" ||
+      r.action === "update" ||
+      r.action === "possible_typo" ||
+      r.action === "lookalike_in_file" ||
+      (r.action === "needs_decision" && r.match_choice !== "leave"),
+  ).length;
+  const waiting = preview.undecided ?? {};
+  const waitingRows = Object.values(waiting).reduce((a, n) => a + n, 0);
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5">
@@ -390,14 +673,30 @@ export default function ImportPreview({
 
       <PreviewColumns preview={preview} onUpdated={setPreview} />
 
-      {grouped.map(({ action, rows }) => (
-        <Group
-          key={action}
-          action={action}
-          rows={rows}
-          importId={importId}
-          onUpdated={setPreview}
-        />
+      {sections.map((section) => (
+        <section key={section.title} className="mt-7">
+          <div className="flex items-start gap-3 border-l-4 border-accent pl-3">
+            <span
+              className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent text-[14px] font-semibold text-accent-fg"
+              aria-hidden="true"
+            >
+              {section.step}
+            </span>
+            <div className="min-w-0">
+              <h3 className="text-[17px] font-semibold leading-snug">{section.title}</h3>
+              {section.hint && <p className="mt-0.5 text-[14px] leading-relaxed text-muted">{section.hint}</p>}
+            </div>
+          </div>
+          {section.groups.map(({ action, rows }) => (
+            <Group
+              key={action}
+              action={action}
+              rows={rows}
+              importId={importId}
+              onUpdated={setPreview}
+            />
+          ))}
+        </section>
       ))}
 
       <div className="mt-5 space-y-3 border-t border-border pt-4">
@@ -406,16 +705,9 @@ export default function ImportPreview({
           <NothingToImport counts={preview.counts} />
         ) : (
           <>
-            {repeats > 0 && (
-              <p className="text-[15px] text-muted">{repeatsText(repeats)}</p>
-            )}
-            <p className="text-[15px] text-muted">
-              {willWrite} row{willWrite === 1 ? "" : "s"} will be written. Every change
-              keeps the old value, so this can be traced back.
-            </p>
             <button
               onClick={runImport}
-              disabled={importing}
+              disabled={importing || waitingRows > 0}
               className="w-full rounded-full bg-accent px-6 py-3 text-[17px] font-semibold text-accent-fg
                 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted sm:w-auto"
             >

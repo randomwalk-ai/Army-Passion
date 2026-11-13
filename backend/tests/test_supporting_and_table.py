@@ -244,3 +244,178 @@ def test_one_family_can_be_fetched_as_a_row(client, tx_db):
     assert body["family_id"] == family.id
     assert body["values"]["family_code"] == family.family_code
     assert client.get("/api/families/999999/row").status_code == 404
+
+
+# --- every detail is a column -------------------------------------------------
+
+
+def family_with_children(session, count: int) -> Family:
+    from app.services.family_table import children_of
+
+    for family in session.scalars(
+        select(Family).where(Family.is_draft.is_(False)).order_by(Family.id)
+    ):
+        if len(children_of(family)) == count:
+            return family
+    pytest.skip(f"no family with {count} children in the seed data")
+
+
+def test_the_table_has_every_detail_the_database_holds(client):
+    keys = {c["key"] for c in client.get("/api/families/table?page_size=1").json()["columns"]}
+    for key in (
+        "tehsil", "post_office", "gps_coordinates", "regiment", "cause_of_death",
+        "bank_branch", "co_unit_phone", "record_office", "correspondence_pincode",
+        "annual_income", "notes", "child1_name", "child3_marital_status",
+    ):
+        assert key in keys
+
+
+def test_child_one_is_the_oldest(client, tx_db):
+    from app.services.family_table import children_of
+
+    family = family_with_children(tx_db, 2)
+    oldest = children_of(family)[0]
+    values = client.get(f"/api/families/{family.id}/row").json()["values"]
+    assert values["child1_name"] == oldest.full_name
+
+
+def test_a_name_in_the_next_empty_child_adds_that_child(client, tx_db):
+    family = family_with_children(tx_db, 1)
+    response = client.patch(
+        f"/api/families/{family.id}/cell", json={"key": "child2_name", "value": "PRIYA DEVI"}
+    )
+    assert response.status_code == 200, response.text
+    values = response.json()["row"]["values"]
+    assert values["children"] == 2
+    assert "Priya Devi" in (values["child1_name"], values["child2_name"])
+
+
+@pytest.mark.parametrize(
+    "key, value, says",
+    [
+        ("child3_name", "Ravi", "Add Child 2 first"),
+        ("child2_sex", "M", "name first"),
+        ("child1_name", "", "cannot be left empty"),
+        ("child1_sex", "X", "M or F"),
+    ],
+)
+def test_bad_child_edits_are_refused(client, tx_db, key, value, says):
+    family = family_with_children(tx_db, 1)
+    response = client.patch(f"/api/families/{family.id}/cell", json={"key": key, "value": value})
+    assert response.status_code == 422
+    assert says in response.json()["detail"]
+
+
+def test_a_childs_sex_makes_them_a_son_or_daughter(client, tx_db):
+    from app.services.family_table import children_of
+
+    family = family_with_children(tx_db, 1)
+    client.patch(f"/api/families/{family.id}/cell", json={"key": "child1_sex", "value": "F"})
+    tx_db.expire_all()
+    assert children_of(tx_db.get(Family, family.id))[0].relation.value == "daughter"
+
+
+def test_cause_of_death_is_filed_under_a_category(client, tx_db):
+    family = first_family(tx_db)
+    response = client.patch(
+        f"/api/families/{family.id}/cell",
+        json={"key": "cause_of_death", "value": "Road accident on NH-44"},
+    )
+    assert response.json()["row"]["values"]["cause_of_death"] == "Road accident on NH-44"
+    tx_db.expire_all()
+    assert tx_db.get(Family, family.id).soldier.cause_category.value == "accident"
+
+
+def test_gps_is_checked_and_tidied(client, tx_db):
+    family = first_family(tx_db)
+    response = client.patch(
+        f"/api/families/{family.id}/cell", json={"key": "gps_coordinates", "value": "28.6139 77.209"}
+    )
+    assert response.json()["row"]["values"]["gps_coordinates"] == "28.613900, 77.209000"
+    bad = client.patch(
+        f"/api/families/{family.id}/cell", json={"key": "gps_coordinates", "value": "hello"}
+    )
+    assert bad.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "key, value, shown",
+    [
+        ("duty_status", "on leave", "on leave"),
+        ("nok_is_govt_servant", "no", "No"),
+        ("whatsapp_opted_in", "Yes", "Yes"),
+        ("soldier_dob", "1-2-1985", "01-02-1985"),
+        ("child1_current_class", "Class 9", "Class 9"),
+        ("child1_is_hostel", "yes", "Yes"),
+        ("child1_aadhaar_last4", "xxxx xxxx 1234", "1234"),
+    ],
+)
+def test_form_fields_are_columns_too(client, tx_db, key, value, shown):
+    family = family_with_children(tx_db, 1)
+    response = client.patch(f"/api/families/{family.id}/cell", json={"key": key, "value": value})
+    assert response.status_code == 200, response.text
+    assert response.json()["row"]["values"][key] == shown
+
+
+@pytest.mark.parametrize(
+    "key, value, says",
+    [
+        ("duty_status", "", "cannot be left empty"),
+        ("nok_is_govt_servant", "maybe", "Yes or No"),
+        ("child1_aadhaar_last4", "123", "last 4 digits"),
+    ],
+)
+def test_bad_form_values_are_refused(client, tx_db, key, value, says):
+    family = family_with_children(tx_db, 1)
+    response = client.patch(f"/api/families/{family.id}/cell", json={"key": key, "value": value})
+    assert response.status_code == 422
+    assert says in response.json()["detail"]
+
+
+# --- profile completeness -----------------------------------------------------
+
+
+def test_every_row_has_a_profile_percentage_and_what_is_missing(client):
+    rows = client.get("/api/families/table?page_size=20").json()["rows"]
+    for r in rows:
+        percent = r["values"]["profile"]
+        assert 0 <= percent <= 100
+        assert (percent == 100) == (r["missing"] == [])
+
+
+def test_filling_a_missing_detail_raises_the_percentage(client, tx_db):
+    family = first_family(tx_db)
+    before = client.get(f"/api/families/{family.id}/row").json()
+    assert "Tehsil" in before["missing"] or family.tehsil
+    client.patch(f"/api/families/{family.id}/cell", json={"key": "tehsil", "value": ""})
+    emptied = client.get(f"/api/families/{family.id}/row").json()
+    filled = client.patch(
+        f"/api/families/{family.id}/cell", json={"key": "tehsil", "value": "Vikasnagar"}
+    ).json()["row"]
+    assert filled["values"]["profile"] > emptied["values"]["profile"]
+    assert "Tehsil" not in filled["missing"]
+
+
+def test_a_missing_childs_details_are_not_counted(tx_db):
+    from app.services.family_table import columns, completeness
+
+    family = family_with_children(tx_db, 1)
+    _, missing = completeness(family, columns(tx_db), 1)
+    assert not any(label.startswith(("Child 2", "Child 3")) for label in missing)
+
+
+def test_sorting_by_profile_puts_the_least_complete_first_across_pages(client):
+    first = client.get("/api/families/table?sort=profile&page=1&page_size=10").json()
+    second = client.get("/api/families/table?sort=profile&page=2&page_size=10").json()
+    percents = [r["values"]["profile"] for r in first["rows"] + second["rows"]]
+    assert percents == sorted(percents)
+    top = client.get("/api/families/table?sort=profile&descending=true&page_size=5").json()
+    assert top["rows"][0]["values"]["profile"] >= percents[-1]
+
+
+def test_the_profile_spread_adds_up_to_every_family(client):
+    spread = client.get("/api/families/profile-spread").json()
+    assert len(spread["counts"]) == 101
+    assert sum(spread["counts"]) == spread["total"] > 0
+    assert 0 <= spread["average"] <= 100
+    assert spread["spread"] >= 0
