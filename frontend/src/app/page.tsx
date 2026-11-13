@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import { Contours, StarMark, Tricolour, useCountUp } from "@/components/Decor";
 import FamilyTable from "@/components/FamilyTable";
+import ProfileCurve from "@/components/ProfileCurve";
 import { Notice, buttonSecondary, errorText } from "@/components/ui";
 import { deleteAllData, getDashboard, getResetStatus, type Stat } from "@/lib/api";
 import { CURRENT_USER } from "@/lib/currentUser";
@@ -376,6 +377,11 @@ export default function Home() {
             )}
           </>
         )}
+      </section>
+
+      {/* ---------- how complete the profiles are ---------- */}
+      <section aria-label="How complete are the profiles?" className="mt-8 sm:mt-10">
+        <ProfileCurve />
       </section>
 
       {/* ---------- the data itself ---------- */}

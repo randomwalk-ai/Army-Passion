@@ -30,7 +30,20 @@ No real person, family, service number or bank account appears anywhere.
   first name) and updated, never added twice; a child missing from a later
   sheet is never deleted.
 - **Columns in the preview**: remove a column, or add a field the sheet
-  doesn't have (with an optional value for every row).
+  doesn't have (with an optional value for every row) — an existing one or a
+  new one he names ("Door No").
+- **He decides every change to a family we have**: each value that would
+  change shows the sheet next to the database with "Keep database", "Take
+  Excel" or "Type correct value". Likely typos are flagged (`typos.py`: a
+  phone 1-2 digits off, day and month swapped, a name spelt slightly
+  differently). A row that only might be a family we have (a "possible
+  duplicate", found with spelling-tolerant name matching) is shown side by
+  side for "Same family / Different family / Leave out". Import is refused
+  until every choice is made.
+- **The same family twice in one sheet**: rows are also compared with each
+  other (same points and spelling tolerance, `SheetIndex` in `matching.py`).
+  An exact copy is skipped by itself, with a note and Edit; rows that only
+  look alike are shown side by side for "keep row A / keep row B / keep both".
 - **Documents**: drop a PDF or photo, pick the family, then the whole family
   or one person in it, and the document type. Stored through the storage
   interface and listed per family.
@@ -61,9 +74,10 @@ No real person, family, service number or bank account appears anywhere.
   the fields his sheet is missing are listed (they stay empty).
 - **All families** (`/families`, also on Home): the database as one table,
   like his Excel sheet. Search, filter (e.g. "No documents yet"), sort by a
-  column. Switch on **Editing** to correct a value in place; it is checked the
-  same way as an import and the old value is kept in history. Tap a name to
-  see the whole family and its documents (works well on a phone).
+  column. The table is read-only; press **✏️** next to a name to see the
+  whole family and its documents and correct a value there (saved only when
+  you press **Save**). Changes are checked the same way as an import and the
+  old value is kept in history.
 - **Supporting documents**: every family keeps **1 to 4** documents (PDF or
   photo). Required when adding a family; managed from the family panel or
   the CEA claim. Stored on local disk for now (`STORAGE_PROVIDER=local`); the

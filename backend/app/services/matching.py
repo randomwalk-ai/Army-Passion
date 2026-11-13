@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -67,6 +68,37 @@ def _overlap(first: set[str], second: set[str]) -> float:
     return len(first & second) / max(len(first), len(second))
 
 
+def sound_key(word: str) -> str:
+    """How a name sounds, roughly, so Indian spelling variants line up.
+
+    Keep the first letter, drop the other vowels and h/w/y, merge doubled
+    letters: Sunita / Suneeta -> "snt", Gurpreet / Gurprit -> "grprt",
+    Kaur / Kour -> "kr", Mohinder / Mahinder -> "mndr".
+    """
+    if not word:
+        return ""
+    rest = re.sub(r"[aeiouhwy]", "", word[1:])
+    key = word[0] + rest
+    return re.sub(r"(.)+", r"", key)
+
+
+def words_close(a: str, b: str) -> bool:
+    """Same word, or the same word spelt a little differently."""
+    if a == b:
+        return True
+    if len(a) < 3 or len(b) < 3 or a[0] != b[0]:
+        return False
+    return sound_key(a) == sound_key(b) or SequenceMatcher(None, a, b).ratio() >= 0.85
+
+
+def _fuzzy_overlap(first: set[str], second: set[str]) -> float:
+    """Like _overlap, but a word spelt slightly differently still counts."""
+    if not first or not second:
+        return 0.0
+    close = sum(1 for word in first if any(words_close(word, other) for other in second))
+    return close / max(len(first), len(second))
+
+
 class FamilyIndex:
     """Loads the families once, so matching 60 rows does not mean 60 queries."""
 
@@ -107,6 +139,8 @@ class FamilyIndex:
             self._district.append(simplify(family.district))
             for word in widow_words | soldier_words:
                 self._by_word.setdefault(word, []).append(position)
+                # Also by sound, so "Suneeta" finds "Sunita".
+                self._by_word.setdefault(f"~{sound_key(word)}", []).append(position)
 
     def find(self, row: ParsedRow) -> MatchResult:
         scores: dict[int, Candidate] = {}
@@ -149,26 +183,36 @@ class FamilyIndex:
         row_district = simplify(district) if district else ""
         # Families sharing at least one word, in their original order (so ties
         # rank exactly as before).
-        positions = sorted(
-            {p for word in row_widow | row_soldier for p in self._by_word.get(word, ())}
-        )
+        lookups = {w for w in row_widow | row_soldier} | {
+            f"~{sound_key(w)}" for w in row_widow | row_soldier
+        }
+        positions = sorted({p for key in lookups for p in self._by_word.get(key, ())})
 
         for position in positions:
             family = self.families[position]
             soldier = family.soldier
 
-            widow_score = _overlap(row_widow, self._widow_words[position])
-            soldier_score = _overlap(row_soldier, self._soldier_words[position]) if soldier else 0
+            # Exact words decide "the same"; spelling-tolerant words decide "close".
+            widow_exact = _overlap(row_widow, self._widow_words[position])
+            soldier_exact = _overlap(row_soldier, self._soldier_words[position]) if soldier else 0
+            widow_score = _fuzzy_overlap(row_widow, self._widow_words[position])
+            soldier_score = (
+                _fuzzy_overlap(row_soldier, self._soldier_words[position]) if soldier else 0
+            )
             if widow_score < 0.6 and soldier_score < 0.6:
                 continue
 
-            if widow_score >= 0.99:
+            if widow_exact >= 0.99:
                 add(family, 30, "Widow's name is the same")
+            elif widow_score >= 0.99:
+                add(family, 24, "Widow's name is spelt slightly differently")
             elif widow_score >= 0.6:
                 add(family, 18, "Widow's name is very close")
 
-            if soldier_score >= 0.99:
+            if soldier_exact >= 0.99:
                 add(family, 30, "Soldier's name is the same")
+            elif soldier_score >= 0.99:
+                add(family, 24, "Soldier's name is spelt slightly differently")
             elif soldier_score >= 0.6:
                 add(family, 18, "Soldier's name is very close")
 
@@ -200,3 +244,95 @@ def signature_for_duplicate_check(row: ParsedRow) -> str | None:
         district = simplify(str(row.values.get("district") or ""))
         return f"nm:{widow}|{soldier}|{district}"
     return None
+
+
+# --- the same family twice in one sheet ----------------------------------------
+
+
+@dataclass
+class RowFacts:
+    """The details of one sheet row that tell families apart, ready to compare."""
+
+    position: int
+    service: str
+    phone: str
+    widow: set[str]
+    soldier: set[str]
+    district: str
+    date_of_death: object
+
+
+def facts_of(position: int, row: ParsedRow) -> RowFacts:
+    values = row.values
+    return RowFacts(
+        position=position,
+        service=simplify(str(values.get("service_number") or "")),
+        phone=re.sub(r"[^\d]", "", str(values.get("phone") or ""))[-10:],
+        widow=set(simplify(str(values.get("widow_name") or "")).split()),
+        soldier=set(simplify(str(values.get("soldier_name") or "")).split()),
+        district=simplify(str(values.get("district") or "")),
+        date_of_death=values.get("date_of_death"),
+    )
+
+
+def score_rows(a: RowFacts, b: RowFacts) -> tuple[int, list[str]]:
+    """How alike two sheet rows are, with the same points as FamilyIndex.find."""
+    score, reasons = 0, []
+    if a.service and a.service == b.service:
+        score, reasons = score + 85, reasons + ["Same service number"]
+    if a.phone and a.phone == b.phone:
+        score, reasons = score + 45, reasons + ["Same phone number"]
+
+    widow = _fuzzy_overlap(a.widow, b.widow)
+    soldier = _fuzzy_overlap(a.soldier, b.soldier)
+    if widow >= 0.6 or soldier >= 0.6:
+        for label, exact, close in (
+            ("Widow's name", _overlap(a.widow, b.widow), widow),
+            ("Soldier's name", _overlap(a.soldier, b.soldier), soldier),
+        ):
+            if exact >= 0.99:
+                score, reasons = score + 30, reasons + [f"{label} is the same"]
+            elif close >= 0.99:
+                score, reasons = score + 24, reasons + [f"{label} is spelt slightly differently"]
+            elif close >= 0.6:
+                score, reasons = score + 18, reasons + [f"{label} is very close"]
+        if a.district and a.district == b.district:
+            score, reasons = score + 15, reasons + ["Same district"]
+        if a.date_of_death and a.date_of_death == b.date_of_death:
+            score, reasons = score + 25, reasons + ["Same date of death"]
+    return min(100, score), reasons
+
+
+class SheetIndex:
+    """The rows of one sheet seen so far, so each new row is compared only with
+    earlier rows that share a name (or a name that sounds the same), the army
+    number or the phone — not with every row."""
+
+    def __init__(self) -> None:
+        self.rows: list[RowFacts] = []
+        self._by_key: dict[str, list[int]] = {}
+
+    def _keys(self, facts: RowFacts) -> set[str]:
+        words = facts.widow | facts.soldier
+        keys = {f"w:{w}" for w in words} | {f"~{sound_key(w)}" for w in words}
+        if facts.service:
+            keys.add(f"sn:{facts.service}")
+        if facts.phone:
+            keys.add(f"ph:{facts.phone}")
+        return keys
+
+    def add(self, facts: RowFacts) -> None:
+        at = len(self.rows)
+        self.rows.append(facts)
+        for key in self._keys(facts):
+            self._by_key.setdefault(key, []).append(at)
+
+    def best(self, facts: RowFacts) -> tuple[RowFacts, int, list[str]] | None:
+        """The earlier row most like this one, if any is alike at all."""
+        found: tuple[RowFacts, int, list[str]] | None = None
+        for at in sorted({i for key in self._keys(facts) for i in self._by_key.get(key, ())}):
+            earlier = self.rows[at]
+            score, reasons = score_rows(facts, earlier)
+            if score and (found is None or score > found[1]):
+                found = (earlier, score, reasons)
+        return found

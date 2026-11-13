@@ -18,7 +18,8 @@ from app.models import (
 )
 from app.models.enums import ChangeSource, IssueCode
 from app.services.excel_reader import SheetData
-from app.services.import_apply import apply_import
+from app.services.import_apply import UndecidedRows, apply_import
+from tests.decide import take_the_sheet
 from app.services.import_preview import RowAction, build_preview
 
 HEADERS = [
@@ -201,6 +202,7 @@ def test_every_changed_field_writes_its_old_value_to_history(tx_db):
           "9876500077", soldier.date_of_death.strftime("%d-%m-%Y"),
           family.district or "", family.state or "", "777777"]]
     )
+    take_the_sheet(tx_db, batch, sheet)
     outcome = apply_import(tx_db, batch, sheet)
     tx_db.flush()
 
@@ -237,6 +239,7 @@ def test_nothing_is_lost_when_a_field_changes(tx_db):
           "9876500088", soldier.date_of_death.strftime("%d-%m-%Y"),
           family.district or "", family.state or "", ""]]
     )
+    take_the_sheet(tx_db, batch, sheet)
     apply_import(tx_db, batch, sheet)
     tx_db.flush()
 
@@ -291,10 +294,8 @@ def test_duplicates_in_the_file_are_not_imported_twice(tx_db):
     )
 
 
-def test_an_uncertain_match_is_imported_but_flagged_for_an_officer(tx_db):
-    """Never merge on a guess. Add it, and raise the question."""
+def _uncertain(tx_db):
     family = an_existing_family(tx_db)
-    batch = make_batch(tx_db)
     # Same widow name and district, but no service number and a different phone.
     sheet = sheet_of(
         [[family.primary_contact_name, "", "", "9876500111",
@@ -303,18 +304,32 @@ def test_an_uncertain_match_is_imported_but_flagged_for_an_officer(tx_db):
     preview = build_preview(tx_db, sheet, MAPPING)
     if preview.rows[0].action != RowAction.needs_decision:
         pytest.skip("This seeded family did not produce an uncertain match")
+    return family, sheet, preview.rows[0]
 
+
+def test_an_uncertain_match_must_be_decided_before_importing(tx_db):
+    """Never merge on a guess, and never add on one either: he decides."""
+    _, sheet, row = _uncertain(tx_db)
+    assert row.undecided == 1
+    assert row.comparison, "he needs the two side by side to decide"
+    with pytest.raises(UndecidedRows):
+        apply_import(tx_db, make_batch(tx_db), sheet)
+
+
+def test_a_possible_duplicate_he_calls_different_is_added_as_new(tx_db):
+    family, sheet, _ = _uncertain(tx_db)
+    batch = make_batch(tx_db)
+    take_the_sheet(tx_db, batch, sheet, match="new")
     outcome = apply_import(tx_db, batch, sheet)
     tx_db.flush()
     assert outcome.created == 1
-    assert outcome.needs_decision == 1
-
-    flagged = tx_db.scalars(
-        select(DataQualityIssue).where(
-            DataQualityIssue.issue_code == IssueCode.possible_duplicate,
-            DataQualityIssue.details["import_id"].astext == str(batch.id),
-        )
-    ).all()
-    assert flagged, "an uncertain match was not raised for an officer"
     # Both records still exist — nothing was merged.
     assert tx_db.get(Family, family.id) is not None
+
+
+def test_a_possible_duplicate_he_leaves_out_is_not_written(tx_db):
+    _, sheet, _ = _uncertain(tx_db)
+    batch = make_batch(tx_db)
+    take_the_sheet(tx_db, batch, sheet, match="leave")
+    outcome = apply_import(tx_db, batch, sheet)
+    assert (outcome.created, outcome.updated, outcome.excluded) == (0, 0, 1)

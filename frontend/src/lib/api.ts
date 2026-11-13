@@ -114,6 +114,21 @@ export type FieldChange = {
   label: string;
   old_value: string | null;
   new_value: string | null;
+  /** The sheet field it comes from ("phone"), for typing a correction. */
+  field_key: string;
+  /** Why it looks like a typo ("Only 1 digit different"), or null for a real update. */
+  typo: string | null;
+  /** His choice so far: keep the database value, take the sheet's, or one he typed. */
+  decision: "keep" | "excel" | "typed" | null;
+};
+
+/** One detail of a possible duplicate, the sheet next to the database. */
+export type Comparison = {
+  label: string;
+  excel: string | null;
+  database: string | null;
+  /** "=" same, "~" slightly different, "!=" different, "" one side empty. */
+  mark: "=" | "~" | "!=" | "";
 };
 
 export type RowProblem = {
@@ -135,9 +150,11 @@ export type RowPreview = {
   action:
     | "create"
     | "update"
+    | "possible_typo"
     | "unchanged"
     | "needs_decision"
     | "duplicate_in_file"
+    | "lookalike_in_file"
     | "skipped"
     | "excluded";
   fields: EditableField[];
@@ -154,6 +171,21 @@ export type RowPreview = {
   changes: FieldChange[];
   problems: RowProblem[];
   duplicate_of_row: number | null;
+  /** For a possible duplicate: his answer, or null while undecided. */
+  match_choice: "same" | "new" | "leave" | null;
+  comparison: Comparison[];
+  /** How many choices this row still needs. */
+  undecided: number;
+  /** Another row of this sheet it looks like, and how alike (0-100). */
+  pair_with_row: number | null;
+  pair_score: number;
+  pair_reasons: string[];
+  /** Keep the earlier row, this row, or both; null while undecided. */
+  pair_choice: "first" | "second" | "both" | null;
+  /** The two rows side by side: "excel" is the other row, "database" this one. */
+  pair_comparison: Comparison[];
+  /** Why this row is where it is, when it isn't obvious. */
+  note: string | null;
 };
 
 export type ActiveColumn = {
@@ -171,6 +203,8 @@ export type PreviewResult = {
   filename: string;
   total_rows: number;
   counts: Record<string, number>;
+  /** Rows still waiting for his choice, by group. Import is refused until empty. */
+  undecided: Record<string, number>;
   problem_count: number;
   rows: RowPreview[];
   active_columns: ActiveColumn[];
@@ -229,6 +263,29 @@ export async function editImportRow(
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ values: body.values ?? {}, skip: body.skip ?? false }),
+    },
+  );
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
+
+/** His choices on one row: keep / take the sheet's value, or whether a possible duplicate is the same family. */
+export async function decideImportRow(
+  importId: number,
+  rowNumber: number,
+  body: {
+    decisions?: Record<string, "keep" | "excel">;
+    clear_typed?: string[];
+    match?: "same" | "new" | "leave";
+    pair?: "first" | "second" | "both" | "undo";
+  },
+): Promise<PreviewResult> {
+  const response = await fetch(
+    `${API_BASE}/api/imports/${importId}/rows/${rowNumber}/decision`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
     },
   );
   if (!response.ok) throw new Error(await failureMessage(response));
@@ -395,11 +452,13 @@ export async function removeSupportingDocument(
 export type TableColumn = {
   key: string;
   label: string;
-  kind: "text" | "phone" | "date" | "number" | "choice" | "status";
+  kind: "text" | "phone" | "date" | "number" | "choice" | "status" | "profile";
   editable: boolean;
   sortable: boolean;
   required: boolean;
   choices: string[];
+  /** The heading it sits under in the family panel. */
+  group: string;
 };
 
 export type SchemeVerdict = { status: EligibilityStatus; label: string; headline: string; amount: number };
@@ -409,6 +468,8 @@ export type TableRow = {
   values: Record<string, string | number | null>;
   /** One answer per scheme, keyed by scheme code ("CEA"). */
   eligibility: Record<string, SchemeVerdict>;
+  /** The details still empty, behind the profile percentage. */
+  missing: string[];
 };
 
 export type FamiliesTable = {
@@ -586,6 +647,22 @@ export type Stat = {
   tone: "normal" | "attention";
   href: string | null;
 };
+
+/** How many families sit at each profile percentage, for the bell curve. */
+export type ProfileSpread = {
+  /** counts[p] = families exactly p% complete (p = 0..100). */
+  counts: number[];
+  total: number;
+  average: number;
+  /** Standard deviation: how widely the percentages spread around the average. */
+  spread: number;
+};
+
+export async function getProfileSpread(): Promise<ProfileSpread> {
+  const response = await fetch(`${API_BASE}/api/families/profile-spread`, { cache: "no-store" });
+  if (!response.ok) throw new Error(await failureMessage(response));
+  return response.json();
+}
 
 export async function getDashboard(): Promise<{ stats: Stat[] }> {
   const response = await fetch(`${API_BASE}/api/dashboard`, { cache: "no-store" });

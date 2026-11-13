@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -67,6 +67,22 @@ class FieldChangeOut(BaseModel):
     label: str
     old_value: str | None
     new_value: str | None
+    # The sheet field it comes from, for typing a correction.
+    field_key: str = ""
+    # Why it looks like a typo, or None for a real update.
+    typo: str | None = None
+    # keep / excel / typed, or None while he hasn't chosen.
+    decision: str | None = None
+
+
+class ComparisonOut(BaseModel):
+    """One detail of a possible duplicate: the sheet next to the database."""
+
+    label: str
+    excel: str | None
+    database: str | None
+    # "=" same, "~" slightly different, "!=" different, "" one side empty.
+    mark: str
 
 
 class RowProblemOut(BaseModel):
@@ -88,6 +104,21 @@ class EditableFieldOut(BaseModel):
     label: str
     value: str
     edited: bool
+
+
+class RowDecisionIn(BaseModel):
+    """His choices on one row of the preview."""
+
+    # {change field_name: "keep" | "excel"} for values that would change.
+    decisions: dict[str, Literal["keep", "excel"]] = Field(default_factory=dict)
+    # Sheet fields whose typed correction should be dropped, because he chose
+    # "keep" or "excel" for them instead.
+    clear_typed: list[str] = Field(default_factory=list)
+    # For a possible duplicate: the same family, a different (new) one, or leave out.
+    match: Literal["same", "new", "leave"] | None = None
+    # Two rows of this sheet that look like one family: keep the earlier row,
+    # this row, or both; "undo" forgets the choice.
+    pair: Literal["first", "second", "both", "undo"] | None = None
 
 
 class RowEditIn(BaseModel):
@@ -114,6 +145,15 @@ class RowPreviewOut(BaseModel):
     changes: list[FieldChangeOut]
     problems: list[RowProblemOut]
     duplicate_of_row: int | None
+    match_choice: str | None = None
+    comparison: list[ComparisonOut] = Field(default_factory=list)
+    undecided: int = 0
+    pair_with_row: int | None = None
+    pair_score: int = 0
+    pair_reasons: list[str] = Field(default_factory=list)
+    pair_choice: str | None = None
+    pair_comparison: list[ComparisonOut] = Field(default_factory=list)
+    note: str | None = None
 
 
 class ActiveColumnOut(BaseModel):
@@ -134,6 +174,8 @@ class PreviewResponse(BaseModel):
     filename: str
     total_rows: int
     counts: dict[str, int]
+    # Rows still waiting for his choice, by group; Import is refused until none.
+    undecided: dict[str, int] = Field(default_factory=dict)
     problem_count: int
     rows: list[RowPreviewOut]
     active_columns: list[ActiveColumnOut] = Field(default_factory=list)

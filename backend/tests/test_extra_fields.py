@@ -12,6 +12,7 @@ from openpyxl import Workbook
 from sqlalchemy import inspect, select
 
 from app.db import engine, get_session
+from tests.decide import take_the_sheet_via_api
 from app.main import app
 from app.models import CustomField, Family, FieldHistory, slugify
 
@@ -205,6 +206,7 @@ def test_changing_an_extra_value_keeps_the_old_one(client, tx_db):
     assert change["new_value"] == "Nangal"
     assert change["label"] == "Panchayat"
 
+    take_the_sheet_via_api(client, body2["import_id"])
     client.post(f"/api/imports/{body2['import_id']}/commit")
     tx_db.expire_all()
 

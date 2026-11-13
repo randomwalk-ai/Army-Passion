@@ -16,8 +16,13 @@ import { useEffect, useState } from "react";
  * Saffron, white and green in a thin band along the top edge of its parent
  * (which must be positioned), with a slow light sweeping along it.
  */
-export function Tricolour({ className = "" }: { className?: string }) {
-  return <div className={`tricolour absolute inset-x-0 top-0 ${className}`} aria-hidden="true" />;
+export function Tricolour({ className = "", bottom = false }: { className?: string; bottom?: boolean }) {
+  return (
+    <div
+      className={`tricolour absolute inset-x-0 ${bottom ? "bottom-0" : "top-0"} ${className}`}
+      aria-hidden="true"
+    />
+  );
 }
 
 /** Three short dashes above a page title. The white one has an outline so it shows on light pages. */

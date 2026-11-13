@@ -11,6 +11,7 @@ from openpyxl import Workbook
 from sqlalchemy import select
 
 from app.db import get_session
+from tests.decide import take_the_sheet_via_api
 from app.main import app
 from app.models import Family
 from app.services.column_mapping import guess_mapping
@@ -163,6 +164,8 @@ def import_rows(client, rows):
     mapping = {c["source_heading"]: c["target_key"] or "__ignore__" for c in up["columns"]}
     client.put(f"/api/imports/{up['import_id']}/mapping", json={"mapping": mapping})
     preview = client.post(f"/api/imports/{up['import_id']}/preview").json()
+    # He takes the sheet's value for every change (each needs his choice).
+    take_the_sheet_via_api(client, up["import_id"])
     result = client.post(f"/api/imports/{up['import_id']}/commit").json()
     return preview, result
 
@@ -258,10 +261,12 @@ def test_a_changed_child_detail_is_an_update_with_history(client, tx_db):
     preview, _ = import_rows(client, [with_children(his_row(), changed)])
 
     row = preview["rows"][0]
-    assert row["action"] == "update"
+    # One digit different in a date: flagged as a possible typo for him to check.
+    assert row["action"] == "possible_typo"
     change = next(c for c in row["changes"] if c["field_name"] == "child.1.date_of_birth")
     assert change["old_value"] == "05-06-2010"
     assert change["new_value"] == "06-06-2010"
+    assert change["typo"] == "One digit different"
 
     rahul = next(k for k in children_of(tx_db) if k.full_name.startswith("Zzz Rahul"))
     assert rahul.date_of_birth.isoformat() == "2010-06-06"
