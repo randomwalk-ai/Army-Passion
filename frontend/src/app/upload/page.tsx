@@ -1,64 +1,59 @@
 "use client";
 
-/** Upload a sheet: choose the file, check the columns, check the rows and save. */
+/**
+ * Upload a sheet: drop the file, review what would change, save.
+ *
+ * His sheet always has the same columns, so they are matched by themselves.
+ * He is only asked about columns when the sheet has one the system does not
+ * know, or is missing a column it needs. Otherwise he goes straight from the
+ * file to the review: his sheet next to what is already saved.
+ */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import ColumnMapping from "@/components/ColumnMapping";
 import ImportPreview from "@/components/ImportPreview";
 import ImportProgress from "@/components/ImportProgress";
-import { Notice, PageHeader, buttonPrimary, buttonSecondary, errorText } from "@/components/ui";
-import { uploadSheet, type UploadResult } from "@/lib/api";
+import { Notice, errorText } from "@/components/ui";
+import { IGNORE, confirmMapping, uploadSheet, type UploadResult } from "@/lib/api";
 import { classify, formatSize } from "@/lib/files";
 
-const STEPS = ["Choose the file", "Check the columns", "Check and save"];
+/** What the page is doing: the heading and the short line under it change with it. */
+const STAGES = [
+  { title: "Upload a sheet", intro: "Nothing is saved until you press Save." },
+  { title: "Review changes", intro: "" },
+  { title: "Saved", intro: "" },
+];
 
-function Steps({
-  current,
-  onGoTo,
-}: {
-  current: number;
-  /** Go back to a finished step. Null while going back is not allowed. */
-  onGoTo: ((index: number) => void) | null;
-}) {
+const primary =
+  "inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-accent px-6 text-[16px] font-semibold " +
+  "text-accent-fg shadow-sm transition hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed " +
+  "disabled:bg-surface-2 disabled:text-muted disabled:shadow-none";
+const quiet =
+  "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 " +
+  "text-[15px] font-medium transition hover:bg-surface-2 active:scale-[0.98]";
+
+const SheetIcon = ({ size = 24 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+    <path d="M14 3v5h5M8.5 12.5h7M8.5 16h7M12 11v7" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+  </svg>
+);
+
+/** A thin bar in three parts under the heading: how far along he is, without step names. */
+function Progress({ stage }: { stage: number }) {
   return (
-    // On a phone: three columns, number above a short label. Wider: one line.
-    <ol className="mb-4 grid grid-cols-3 gap-2 sm:flex sm:gap-6" aria-label="Steps">
-      {STEPS.map((label, index) => {
-        const done = index < current;
-        const active = index === current;
-        // A finished step is a button that takes you back to it.
-        const clickable = done && onGoTo !== null;
-        const Tag = clickable ? "button" : "div";
-        return (
-          <li key={label} aria-current={active ? "step" : undefined}>
-            <Tag
-              {...(clickable
-                ? { type: "button" as const, onClick: () => onGoTo(index), title: `Go back to “${label}”` }
-                : {})}
-              className={`flex w-full flex-col items-center gap-1.5 text-center text-[14px] leading-tight sm:flex-row sm:gap-2.5 sm:text-left sm:text-[16px] ${
-                active ? "font-semibold" : "text-muted"
-              } ${clickable ? "rounded-full hover:text-text hover:underline" : ""}`}
-            >
-            <span
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[15px] font-semibold ${
-                done || active ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted"
-              }`}
-            >
-              {done ? (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M5 12.5l4.5 4.5L19 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              ) : (
-                index + 1
-              )}
-            </span>
-            {label}
-            </Tag>
-          </li>
-        );
-      })}
-    </ol>
+    <div className="mt-5 flex items-center gap-3" aria-label={`Part ${stage + 1} of 3`}>
+      <div className="flex w-40 gap-1.5 sm:w-52" aria-hidden="true">
+        {STAGES.map((_, i) => (
+          <span
+            key={i}
+            className={`h-1.5 flex-1 rounded-full transition-colors ${i <= stage ? "bg-accent" : "bg-border"}`}
+          />
+        ))}
+      </div>
+      <span className="text-[13px] font-medium text-muted">{stage + 1} of 3</span>
+    </div>
   );
 }
 
@@ -91,28 +86,34 @@ function ConfirmLeave({
       aria-describedby="confirm-leave-body"
     >
       <button aria-label="Stay here" onClick={onStay} className="absolute inset-0 bg-black/45" tabIndex={-1} />
-      <div className="pb-safe relative w-full max-w-md rounded-3xl border border-border bg-bg p-6 shadow-2xl">
-        <h2 id="confirm-leave-title" className="text-[22px] font-semibold leading-tight">
+      <div className="pb-safe relative w-full max-w-md rounded-2xl border border-border bg-surface p-6 shadow-2xl">
+        <h2 id="confirm-leave-title" className="text-[20px] font-semibold leading-tight">
           Leave this file?
         </h2>
         <div id="confirm-leave-body" className="mt-2 space-y-2 text-[16px] leading-relaxed text-muted">
           <p>
-            You corrected {rows} row{rows === 1 ? "" : "s"} in this sheet. If you go back to choose a
-            file, {rows === 1 ? "that correction" : "those corrections"} will be lost.
+            You made {rows === 1 ? "a choice" : "choices"} on {rows} famil{rows === 1 ? "y" : "ies"} in this
+            sheet. If you choose another file, {rows === 1 ? "it" : "they"} will be lost.
           </p>
           <p>Nothing has been saved to the families yet.</p>
         </div>
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-          <button ref={stayButton} type="button" onClick={onStay} className={`${buttonSecondary} w-full sm:w-auto`}>
+          <button ref={stayButton} type="button" onClick={onStay} className={`${quiet} w-full sm:w-auto`}>
             Stay here
           </button>
-          <button type="button" onClick={onLeave} className={`${buttonPrimary} w-full sm:w-auto`}>
-            Yes, go back
+          <button type="button" onClick={onLeave} className={`${primary} w-full sm:w-auto`}>
+            Yes, choose another
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+/** Does this sheet need his word on its columns? Only for columns we have no place for,
+ *  or a required column that is missing. */
+function columnsNeedHim(result: UploadResult): boolean {
+  return result.missing_required.length > 0 || result.columns.some((c) => !c.target_key);
 }
 
 export default function UploadPage() {
@@ -124,33 +125,24 @@ export default function UploadPage() {
   const [error, setError] = useState<string | null>(null);
   const [upload, setUpload] = useState<UploadResult | null>(null);
   const [columnsConfirmed, setColumnsConfirmed] = useState(false);
-  // The column choices last confirmed, so "Back" to step 2 shows them again.
-  const [mapping, setMapping] = useState<Record<string, string> | null>(null);
-  // While rows are checked or saved, or once saved, there is no going back.
+  // While rows are checked or saved there is no leaving the file.
   const [busy, setBusy] = useState(false);
   const [finished, setFinished] = useState(false);
-  // Rows he corrected or left out in step 3. They belong to this upload, so
-  // going back to step 1 loses them: we ask first.
+  // Rows he decided on, corrected or left out. They belong to this upload, so
+  // choosing another file loses them: we ask first.
   const [rowEdits, setRowEdits] = useState(0);
   const [askLeave, setAskLeave] = useState(false);
   const [dragging, setDragging] = useState(false);
 
-  const step = !upload ? 0 : !columnsConfirmed ? 1 : 2;
-  const canGoBack = step > 0 && !reading && !busy && !finished;
+  const stage = finished ? 2 : upload || reading ? 1 : 0;
+  const { title, intro } = STAGES[stage];
 
-  /** Back to step 1: straight away, or after a warning if corrections would be lost. */
+  /** Choose another file: straight away, or after a warning if choices would be lost. */
   function leaveFile() {
     if (rowEdits > 0 && !finished) setAskLeave(true);
     else startAgain();
   }
 
-  function goTo(index: number) {
-    if (index === 0) leaveFile();
-    else if (index === 1) {
-      setColumnsConfirmed(false);
-      setBusy(false);
-    }
-  }
   const onBusyChange = useCallback((value: boolean) => setBusy(value), []);
   const onFinished = useCallback(() => setFinished(true), []);
   const onEditsChange = useCallback((rows: number) => setRowEdits(rows), []);
@@ -165,13 +157,21 @@ export default function UploadPage() {
     setFile(picked);
     setUpload(null);
     setColumnsConfirmed(false);
-    setMapping(null);
     setFinished(false);
     setRowEdits(0);
     setReading(true);
     setSent(0);
     try {
-      setUpload(await uploadSheet(picked, setSent));
+      const result = await uploadSheet(picked, setSent);
+      // The usual columns: accept the matching as it is and go straight to the review.
+      if (!columnsNeedHim(result)) {
+        const mapping = Object.fromEntries(
+          result.columns.map((c) => [c.source_heading, c.target_key || IGNORE]),
+        );
+        await confirmMapping(result.import_id, mapping);
+        setColumnsConfirmed(true);
+      }
+      setUpload(result);
     } catch (e) {
       setError(errorText(e));
       setFile(null);
@@ -184,7 +184,6 @@ export default function UploadPage() {
     setFile(null);
     setUpload(null);
     setColumnsConfirmed(false);
-    setMapping(null);
     setBusy(false);
     setFinished(false);
     setRowEdits(0);
@@ -194,24 +193,12 @@ export default function UploadPage() {
   }
 
   return (
-    <AppShell>
-      <PageHeader
-        title="Upload a sheet"
-        intro="Add new families or update existing ones from an Excel sheet. Nothing is saved until you have checked it and pressed the final button."
-      />
-
-      <Steps current={step} onGoTo={canGoBack ? goTo : null} />
-
-      <div className="mb-6 min-h-11 sm:mb-8">
-        {canGoBack && (
-          <button
-            onClick={() => goTo(step - 1)}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-[16px] font-medium text-accent hover:bg-surface-2"
-          >
-            <span aria-hidden="true">←</span> Back
-          </button>
-        )}
-      </div>
+    <AppShell plain>
+      <header className="mb-8">
+        <h1 className="text-[30px] font-semibold leading-tight tracking-tight sm:text-[36px]">{title}</h1>
+        {intro && <p className="mt-2 text-[16px] text-muted sm:text-[17px]">{intro}</p>}
+        <Progress stage={stage} />
+      </header>
 
       <input
         ref={input}
@@ -230,7 +217,7 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* ---------- step 1 ---------- */}
+      {/* ---------- the file ---------- */}
       {!file && (
         <div
           onDragOver={(e) => {
@@ -243,62 +230,57 @@ export default function UploadPage() {
             setDragging(false);
             choose(e.dataTransfer.files?.[0]);
           }}
-          className={`flex flex-col items-center rounded-3xl border-2 border-dashed px-5 py-10 text-center transition sm:px-6 sm:py-14 ${
-            dragging ? "border-accent bg-accent-soft" : "border-border bg-surface"
+          className={`rounded-2xl border bg-surface p-2 shadow-sm transition ${
+            dragging ? "border-accent ring-4 ring-accent/15" : "border-border"
           }`}
         >
-          <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-soft text-accent" aria-hidden="true">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
-              <rect x="3.5" y="4" width="17" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
-              <path d="M3.5 9.5h17M9.5 9.5V20M3.5 15h17" stroke="currentColor" strokeWidth="1.8" />
-            </svg>
-          </span>
-          {/* Phones cannot drag files, so they only see the button. */}
-          <p className="mt-5 text-xl font-semibold sm:hidden">Choose your Excel sheet</p>
-          <p className="mt-5 hidden text-xl font-semibold sm:block">Drag your Excel sheet here</p>
-          <p className="mt-1 hidden text-[16px] text-muted sm:block">or</p>
-          <button onClick={() => input.current?.click()} className={`${buttonPrimary} mt-4 w-full sm:mt-3 sm:w-auto`}>
-            Choose a file
-          </button>
-          <p className="mt-4 text-[15px] text-muted">Excel (.xlsx, .xls) or .csv</p>
+          <div
+            className={`flex flex-col items-center rounded-xl border-2 border-dashed px-5 py-12 text-center transition sm:py-16 ${
+              dragging ? "border-accent bg-accent-soft" : "border-border"
+            }`}
+          >
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-soft text-accent">
+              <SheetIcon size={28} />
+            </span>
+            {/* Phones cannot drag files, so they only see the button. */}
+            <p className="mt-5 text-[19px] font-semibold sm:hidden">Choose your Excel sheet</p>
+            <p className="mt-5 hidden text-[19px] font-semibold sm:block">Drop your Excel sheet here</p>
+            <button onClick={() => input.current?.click()} className={`${primary} mt-5 w-full sm:w-auto`}>
+              Choose a file
+            </button>
+            <p className="mt-4 text-[14px] text-muted">Excel (.xlsx, .xls) or .csv</p>
+          </div>
         </div>
       )}
 
+
       {file && (
-        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-4 sm:gap-4 sm:px-5">
-          <span className="text-accent" aria-hidden="true">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-              <rect x="3.5" y="4" width="17" height="16" rx="2" stroke="currentColor" strokeWidth="1.8" />
-              <path d="M3.5 9.5h17M9.5 9.5V20M3.5 15h17" stroke="currentColor" strokeWidth="1.8" />
-            </svg>
+        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 shadow-sm sm:gap-4">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent">
+            <SheetIcon size={20} />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[17px] font-medium">{file.name}</p>
+            <p className="truncate text-[16px] font-semibold">{file.name}</p>
             <p className="text-[14px] text-muted">
               {reading ? "Reading the sheet…" : `${formatSize(file.size)}${upload ? ` · ${upload.row_count} rows` : ""}`}
             </p>
           </div>
-          <button onClick={leaveFile} className={`${buttonSecondary} w-full sm:w-auto`}>
-            Choose a different file
-          </button>
+          {!reading && !busy && !finished && (
+            <button onClick={leaveFile} className={`${quiet} w-full sm:w-auto`}>
+              Choose another file
+            </button>
+          )}
         </div>
       )}
 
       {reading && <ImportProgress step="sending" sent={sent} />}
 
-      {/* ---------- step 2 ---------- */}
+      {/* ---------- only when the sheet's columns need his word ---------- */}
       {upload && !columnsConfirmed && (
-        <ColumnMapping
-          result={upload}
-          saved={mapping}
-          onConfirmed={(confirmed) => {
-            setMapping(confirmed);
-            setColumnsConfirmed(true);
-          }}
-        />
+        <ColumnMapping result={upload} onConfirmed={() => setColumnsConfirmed(true)} />
       )}
 
-      {/* ---------- step 3 ---------- */}
+      {/* ---------- the review ---------- */}
       {upload && columnsConfirmed && (
         <ImportPreview
           importId={upload.import_id}

@@ -72,10 +72,13 @@ function AshokaChakra({ className = "" }: { className?: string }) {
 export default function AppShell({
   children,
   wide = false,
+  plain = false,
 }: {
   children: React.ReactNode;
   /** For the families table, which needs the whole width of a big screen. */
   wide?: boolean;
+  /** A quiet working page: no flag wash behind it, the calm colours and font. */
+  plain?: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -91,9 +94,9 @@ export default function AppShell({
     <div className="app-height flex overflow-hidden bg-bg">
       <Sidebar open={menuOpen} onClose={() => setMenuOpen(false)} />
 
-      <div className="relative isolate flex min-w-0 flex-1 flex-col">
+      <div className={`relative isolate flex min-w-0 flex-1 flex-col ${plain ? "calm-theme font-calm" : ""}`}>
         {/* The tricolour, far behind the page (see FLAG_LOOK). */}
-        {FLAG_LOOK === 1 ? (
+        {plain ? null : FLAG_LOOK === 1 ? (
           <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
             <div className="ambient-glow saffron -right-32 -top-40 h-[38rem] w-[38rem]" />
             <div className="ambient-glow green -bottom-48 -left-32 h-[40rem] w-[40rem]" />
@@ -126,8 +129,8 @@ export default function AppShell({
         )}
         {/* The tricolour along the top of every page (a phone has it in its header). */}
         <Tricolour
-          className={`z-10 hidden md:block ${FLAG_LOOK === 2 || FLAG_LOOK === 4 || FLAG_LOOK === 6 || FLAG_LOOK === 7 || FLAG_LOOK === 8 ? "thick" : ""} ${
-            FLAG_LOOK === 6 ? "still" : ""
+          className={`z-10 hidden md:block ${plain ? "" : FLAG_LOOK === 2 || FLAG_LOOK === 4 || FLAG_LOOK === 6 || FLAG_LOOK === 7 || FLAG_LOOK === 8 ? "thick" : ""} ${
+            plain || FLAG_LOOK === 6 ? "still" : ""
           }`}
         />
 

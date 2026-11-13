@@ -76,6 +76,58 @@
   --warning: #e2be6e;
 }
 
+/* A quieter look for working pages (the sheet upload): cool off-white, white
+   cards, soft grey lines and a deep forest green. It only re-sets the tokens,
+   so everything inside keeps its usual classes. */
+.calm-theme {
+  --bg: #f6f7f5;
+  --surface: #ffffff;
+  --surface-2: #f0f2ee;
+  --border: #e2e5df;
+  --text: #16201a;
+  --text-muted: #5f6b63;
+  --accent: #1f5136;
+  --accent-soft: #e7f0ea;
+  --accent-fg: #ffffff;
+  --success: #17803d;
+  --warning: #9a5b00;
+  --danger: #b42318;
+  background: var(--bg);
+  color: var(--text);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .calm-theme {
+    --bg: #111412;
+    --surface: #181c19;
+    --surface-2: #222723;
+    --border: #2d332e;
+    --text: #eceeea;
+    --text-muted: #a1aaa3;
+    --accent: #8fcaa4;
+    --accent-soft: #1d2b22;
+    --accent-fg: #0f1a13;
+    --success: #7cd39b;
+    --warning: #f0c06b;
+    --danger: #f4a59c;
+  }
+}
+
+:root[data-theme="dark"] .calm-theme {
+  --bg: #111412;
+  --surface: #181c19;
+  --surface-2: #222723;
+  --border: #2d332e;
+  --text: #eceeea;
+  --text-muted: #a1aaa3;
+  --accent: #8fcaa4;
+  --accent-soft: #1d2b22;
+  --accent-fg: #0f1a13;
+  --success: #7cd39b;
+  --warning: #f0c06b;
+  --danger: #f4a59c;
+}
+
 /* The menu and the phone's top bar: deep olive with brass, in both modes.
    It only re-sets the tokens, so everything inside keeps its usual classes. */
 .olive-panel {
@@ -362,4 +414,12 @@ textarea {
   .tricolour::after { display: none; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { transition-duration: 0.01ms !important; }
+}
+
+/* The working pages' font (Inter, set up in layout.tsx), with the system font as a fallback. */
+.font-calm {
+  font-family:
+    var(--font-calm), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  letter-spacing: -0.005em;
 }
